@@ -1,6 +1,0 @@
-[default]
-skip-clean = true
-
-[report]
-out = ["Xml"]
-output-dir = "../../../../coverage/rust/google-agones-sdk-bindings-rust"

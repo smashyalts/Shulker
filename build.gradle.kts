@@ -100,7 +100,10 @@ subprojects {
 
         detekt {
             buildUponDefaultConfig = true
-            ignoreFailures = true
+            // Blocking: existing violations live in the baseline, so anything
+            // reported here is new and should fail the build rather than be
+            // silently uploaded to the code-scanning tab.
+            ignoreFailures = false
             config.setFrom("$rootDir/gradle/detekt-config.yml")
             baseline = file("$rootDir/gradle/detekt-baseline.xml")
             basePath = rootDir.absolutePath

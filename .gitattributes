@@ -1,0 +1,35 @@
+* text=auto eol=lf
+
+# These files are embedded verbatim into Kubernetes ConfigMaps at compile time
+# via `include_str!` and executed inside Linux containers. CRLF endings would be
+# baked into the generated manifests and break the scripts at runtime, so they
+# must stay LF regardless of the contributor's platform or core.autocrlf setting.
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Likewise for anything shipped as container/cluster content.
+Dockerfile text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+
+# Windows-only helpers genuinely want CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets must never be normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.jar binary
+*.gz binary
+*.zip binary
+
+# Generated protobuf bindings and lockfiles: keep diffs out of review noise.
+packages/*/bindings/rust/src/gen/** linguist-generated=true
+packages/*/bindings/java/src/generated/** linguist-generated=true
+Cargo.lock linguist-generated=true
+pnpm-lock.yaml linguist-generated=true

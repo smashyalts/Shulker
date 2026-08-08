@@ -47,7 +47,6 @@ pub struct ProxyFleetSpec {
     pub autoscaling: Option<FleetAutoscalingSpec>,
 }
 
-#[cfg(not(tarpaulin_include))]
 impl ProxyFleetSpec {
     fn default_replicas() -> u32 {
         1
@@ -148,7 +147,6 @@ pub struct ProxyFleetTemplateConfigurationSpec {
     pub skip_agent_download: bool,
 }
 
-#[cfg(not(tarpaulin_include))]
 impl ProxyFleetTemplateConfigurationSpec {
     fn default_max_players() -> u32 {
         100
@@ -276,7 +274,6 @@ pub struct ProxyFleetStatus {
     pub allocated_replicas: i32,
 }
 
-#[cfg(not(tarpaulin_include))]
 impl HasConditions for ProxyFleetStatus {
     fn conditions(&self) -> &Vec<Condition> {
         &self.conditions

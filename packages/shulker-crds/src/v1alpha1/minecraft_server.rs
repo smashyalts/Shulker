@@ -127,7 +127,6 @@ pub struct MinecraftServerConfigurationSpec {
     pub skip_agent_download: bool,
 }
 
-#[cfg(not(tarpaulin_include))]
 impl MinecraftServerConfigurationSpec {
     fn default_max_players() -> u32 {
         20
@@ -218,7 +217,6 @@ pub struct MinecraftServerStatus {
     pub port: i32,
 }
 
-#[cfg(not(tarpaulin_include))]
 impl HasConditions for MinecraftServerStatus {
     fn conditions(&self) -> &Vec<Condition> {
         &self.conditions

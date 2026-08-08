@@ -14,10 +14,10 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cargo tarpaulin",
+        "command": "cargo llvm-cov --cobertura --output-path ../../coverage/rust/google-agones-crds/cobertura.xml",
         "cwd": "packages/google-agones-crds"
       },
-      "inputs": ["default", "rust:dependencies", "rust:test:dependencies"],
+      "inputs": ["default", "rust:dependencies"],
       "outputs": [
         "{workspaceRoot}/coverage/rust/google-agones-crds/cobertura.xml"
       ]
@@ -25,7 +25,7 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cargo fmt",
+        "command": "cargo fmt --check",
         "cwd": "packages/google-agones-crds"
       },
       "inputs": ["default", "rust:dependencies"]

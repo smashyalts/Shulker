@@ -23,7 +23,6 @@
       "{workspaceRoot}/Cargo.toml",
       "{workspaceRoot}/Cargo.lock"
     ],
-    "rust:test:dependencies": ["{workspaceRoot}/tarpaulin.toml"],
     "docker:dependencies": ["{projectRoot}/Dockerfile"]
   },
   "plugins": [

@@ -1,153 +1,130 @@
+# This file is hand-maintained.
+#
+# It used to be regenerated on every commit by scripts/generate_codecov_config.cjs,
+# which walked the Nx project graph to emit one Codecov *flag* per project plus a
+# matching scripts/upload_codecov_files.sh with one uploader invocation per flag.
+# That existed only to work around the old bash uploader accepting a single flag
+# per run. The current uploader takes every report in one call, and Codecov's
+# `component_management` slices coverage by path server-side, so the whole
+# codegen step (and its dependency on the Nx graph inside a Git hook) is gone.
+#
+# When adding a package, add a component entry below.
+
 comment:
   layout: reach, diff, flags, files
   behavior: default
   require_changes: false
   require_base: true
   require_head: true
+
 coverage:
   status:
-    default_rules:
-      flag_coverage_not_uploaded_behavior: exclude
     project:
-      default: {}
-      google-agones-crds:
-        flags:
-          - google-agones-crds
-      google-agones-sdk-bindings-java:
-        flags:
-          - google-agones-sdk-bindings-java
-      google-agones-sdk-bindings-rust:
-        flags:
-          - google-agones-sdk-bindings-rust
-      google-open-match-sdk-bindings-java:
-        flags:
-          - google-open-match-sdk-bindings-java
-      google-open-match-sdk-bindings-rust:
-        flags:
-          - google-open-match-sdk-bindings-rust
-      shulker-addon-matchmaking:
-        flags:
-          - shulker-addon-matchmaking
-      shulker-cli:
-        flags:
-          - shulker-cli
-      shulker-cluster-api:
-        flags:
-          - shulker-cluster-api
-      shulker-cluster-api-impl:
-        flags:
-          - shulker-cluster-api-impl
-      shulker-crds:
-        flags:
-          - shulker-crds
-      shulker-kube-utils:
-        flags:
-          - shulker-kube-utils
-      shulker-operator:
-        flags:
-          - shulker-operator
-      shulker-proxy-agent:
-        flags:
-          - shulker-proxy-agent
-      shulker-proxy-api:
-        flags:
-          - shulker-proxy-api
-      shulker-sdk-bindings-java:
-        flags:
-          - shulker-sdk-bindings-java
-      shulker-sdk-bindings-rust:
-        flags:
-          - shulker-sdk-bindings-rust
-      shulker-server-agent:
-        flags:
-          - shulker-server-agent
-      shulker-server-api:
-        flags:
-          - shulker-server-api
-      shulker-server-minestom-demo:
-        flags:
-          - shulker-server-minestom-demo
-      shulker-utils:
-        flags:
-          - shulker-utils
-flags:
-  google-agones-crds:
-    paths:
-      - packages/google-agones-crds
-    carryforward: true
-  google-agones-sdk-bindings-java:
-    paths:
-      - packages/google-agones-sdk/bindings/java
-    carryforward: true
-  google-agones-sdk-bindings-rust:
-    paths:
-      - packages/google-agones-sdk/bindings/rust
-    carryforward: true
-  google-open-match-sdk-bindings-java:
-    paths:
-      - packages/google-open-match-sdk/bindings/java
-    carryforward: true
-  google-open-match-sdk-bindings-rust:
-    paths:
-      - packages/google-open-match-sdk/bindings/rust
-    carryforward: true
-  shulker-addon-matchmaking:
-    paths:
-      - packages/shulker-addon-matchmaking
-    carryforward: true
-  shulker-cli:
-    paths:
-      - packages/shulker-cli
-    carryforward: true
-  shulker-cluster-api:
-    paths:
-      - packages/shulker-cluster-api
-    carryforward: true
-  shulker-cluster-api-impl:
-    paths:
-      - packages/shulker-cluster-api-impl
-    carryforward: true
-  shulker-crds:
-    paths:
-      - packages/shulker-crds
-    carryforward: true
-  shulker-kube-utils:
-    paths:
-      - packages/shulker-kube-utils
-    carryforward: true
-  shulker-operator:
-    paths:
-      - packages/shulker-operator
-    carryforward: true
-  shulker-proxy-agent:
-    paths:
-      - packages/shulker-proxy-agent
-    carryforward: true
-  shulker-proxy-api:
-    paths:
-      - packages/shulker-proxy-api
-    carryforward: true
-  shulker-sdk-bindings-java:
-    paths:
-      - packages/shulker-sdk/bindings/java
-    carryforward: true
-  shulker-sdk-bindings-rust:
-    paths:
-      - packages/shulker-sdk/bindings/rust
-    carryforward: true
-  shulker-server-agent:
-    paths:
-      - packages/shulker-server-agent
-    carryforward: true
-  shulker-server-api:
-    paths:
-      - packages/shulker-server-api
-    carryforward: true
-  shulker-server-minestom-demo:
-    paths:
-      - packages/shulker-server-minestom-demo
-    carryforward: true
-  shulker-utils:
-    paths:
-      - packages/shulker-utils
-    carryforward: true
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 5%
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+        threshold: 1%
+
+  individual_components:
+    # Rust
+    - component_id: google_agones_crds
+      name: google-agones-crds
+      paths:
+        - packages/google-agones-crds/**
+    - component_id: google_agones_sdk_rust
+      name: google-agones-sdk-bindings-rust
+      paths:
+        - packages/google-agones-sdk/bindings/rust/**
+    - component_id: google_open_match_sdk_rust
+      name: google-open-match-sdk-bindings-rust
+      paths:
+        - packages/google-open-match-sdk/bindings/rust/**
+    - component_id: shulker_addon_matchmaking
+      name: shulker-addon-matchmaking
+      paths:
+        - packages/shulker-addon-matchmaking/**
+    - component_id: shulker_cli
+      name: shulker-cli
+      paths:
+        - packages/shulker-cli/**
+    - component_id: shulker_crds
+      name: shulker-crds
+      paths:
+        - packages/shulker-crds/**
+    - component_id: shulker_kube_utils
+      name: shulker-kube-utils
+      paths:
+        - packages/shulker-kube-utils/**
+    - component_id: shulker_operator
+      name: shulker-operator
+      paths:
+        - packages/shulker-operator/**
+    - component_id: shulker_sdk_rust
+      name: shulker-sdk-bindings-rust
+      paths:
+        - packages/shulker-sdk/bindings/rust/**
+    - component_id: shulker_utils
+      name: shulker-utils
+      paths:
+        - packages/shulker-utils/**
+
+    # JVM
+    - component_id: google_agones_sdk_java
+      name: google-agones-sdk-bindings-java
+      paths:
+        - packages/google-agones-sdk/bindings/java/**
+    - component_id: google_open_match_sdk_java
+      name: google-open-match-sdk-bindings-java
+      paths:
+        - packages/google-open-match-sdk/bindings/java/**
+    - component_id: shulker_sdk_java
+      name: shulker-sdk-bindings-java
+      paths:
+        - packages/shulker-sdk/bindings/java/**
+    - component_id: shulker_cluster_api
+      name: shulker-cluster-api
+      paths:
+        - packages/shulker-cluster-api/**
+    - component_id: shulker_cluster_api_impl
+      name: shulker-cluster-api-impl
+      paths:
+        - packages/shulker-cluster-api-impl/**
+    - component_id: shulker_proxy_agent
+      name: shulker-proxy-agent
+      paths:
+        - packages/shulker-proxy-agent/**
+    - component_id: shulker_proxy_api
+      name: shulker-proxy-api
+      paths:
+        - packages/shulker-proxy-api/**
+    - component_id: shulker_server_agent
+      name: shulker-server-agent
+      paths:
+        - packages/shulker-server-agent/**
+    - component_id: shulker_server_api
+      name: shulker-server-api
+      paths:
+        - packages/shulker-server-api/**
+    - component_id: shulker_server_minestom_demo
+      name: shulker-server-minestom-demo
+      paths:
+        - packages/shulker-server-minestom-demo/**
+
+ignore:
+  - docs/**
+  - examples/**
+  - kube/**
+  - scripts/**
+  - "**/src/gen/**"
+  - "**/src/generated/**"
+  - "**/fixtures.rs"

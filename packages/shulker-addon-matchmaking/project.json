@@ -22,10 +22,10 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cargo tarpaulin",
+        "command": "cargo llvm-cov --cobertura --output-path ../../coverage/rust/shulker-addon-matchmaking/cobertura.xml",
         "cwd": "packages/shulker-addon-matchmaking"
       },
-      "inputs": ["default", "rust:dependencies", "rust:test:dependencies"],
+      "inputs": ["default", "rust:dependencies"],
       "outputs": [
         "{workspaceRoot}/coverage/rust/shulker-addon-matchmaking/cobertura.xml"
       ]
@@ -33,7 +33,7 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cargo fmt",
+        "command": "cargo fmt --check",
         "cwd": "packages/shulker-addon-matchmaking"
       },
       "inputs": ["default", "rust:dependencies"]

@@ -8,6 +8,11 @@ all-features = true
 
 [advisories]
 version = 2
+yanked = "deny"
+# `cargo deny check` is a blocking CI gate, so surface unmaintained crates from
+# every advisory source rather than only the RustSec-authored ones. This is what
+# catches a dependency being archived upstream while it is still resolving fine.
+unmaintained = "all"
 
 [bans]
 multiple-versions = "warn"

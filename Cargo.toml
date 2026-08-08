@@ -75,4 +75,4 @@ url = "2.5.2"
 uuid = { version = "1.10.0", features = ["v4"] }
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+unexpected_cfgs = { level = "warn" }

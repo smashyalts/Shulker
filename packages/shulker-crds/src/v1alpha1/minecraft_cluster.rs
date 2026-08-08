@@ -70,7 +70,6 @@ pub struct MinecraftClusterRedisProvidedSpec {
     pub credentials_secret_name: Option<String>,
 }
 
-#[cfg(not(tarpaulin_include))]
 impl MinecraftClusterRedisProvidedSpec {
     fn default_port() -> u16 {
         6379
