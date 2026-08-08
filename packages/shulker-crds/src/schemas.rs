@@ -35,3 +35,28 @@ pub struct ImageOverrideSpec {
 pub struct FleetAutoscalingSpec {
     pub agones_policy: Option<FleetAutoscalerPolicySpec>,
 }
+
+/// Schema for a free-form object the API server stores verbatim.
+///
+/// Used for the pod template overlay. Generating the full `PodTemplateSpec`
+/// schema instead would inline the entire pod API -- containers, probes,
+/// security contexts, every volume source -- into each of the four CRDs, and
+/// the manifests are already among the largest objects the chart installs.
+/// Marking it `x-kubernetes-preserve-unknown-fields` keeps the whole pod API
+/// reachable without paying for the schema, at the cost of client-side
+/// validation of the overlay.
+pub fn preserve_unknown_fields(
+    _generator: &mut schemars::gen::SchemaGenerator,
+) -> schemars::schema::Schema {
+    let mut schema = schemars::schema::SchemaObject {
+        instance_type: Some(schemars::schema::InstanceType::Object.into()),
+        ..Default::default()
+    };
+
+    schema.extensions.insert(
+        "x-kubernetes-preserve-unknown-fields".to_string(),
+        serde_json::Value::Bool(true),
+    );
+
+    schema.into()
+}

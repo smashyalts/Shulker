@@ -34,6 +34,7 @@ use google_agones_crds::v1::game_server::GameServerHealthSpec;
 use google_agones_crds::v1::game_server::GameServerSpec;
 use shulker_crds::v1alpha1::minecraft_server::MinecraftServer;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
+use shulker_kube_utils::reconcilers::merge::apply_overlay;
 
 use super::config_map::ConfigMapBuilder;
 use super::flavor::Flavor;
@@ -356,14 +357,26 @@ impl<'a> GameServerBuilder {
             "minecraft-server".to_string(),
         )]));
 
-        Ok(PodTemplateSpec {
+        let pod_template = PodTemplateSpec {
             metadata: Some(ObjectMeta {
                 labels: Some(pod_labels),
                 annotations: Some(pod_annotations),
                 ..ObjectMeta::default()
             }),
             spec: Some(pod_spec),
-        })
+        };
+
+        // Applied last so it wins over the individual overrides above, and can
+        // reach pod fields the CRD does not model.
+        match minecraft_server
+            .spec
+            .pod_overrides
+            .as_ref()
+            .and_then(|overrides| overrides.pod_template.as_ref())
+        {
+            Some(overlay) => Ok(apply_overlay(&pod_template, overlay)?),
+            None => Ok(pod_template),
+        }
     }
 
     async fn get_init_env(
@@ -967,6 +980,99 @@ mod tests {
             .unwrap();
         assert_eq!(init_image, &crate::config::Images::get().init);
         assert!(!init_image.ends_with(":latest"));
+    }
+
+    #[tokio::test]
+    async fn get_pod_template_spec_applies_the_pod_template_overlay() {
+        // G
+        let client = create_client_mock();
+        let resourceref_resolver = ResourceRefResolver::new(client);
+        let mut server = TEST_SERVER.clone();
+        server.spec.pod_overrides.as_mut().unwrap().pod_template = Some(serde_json::json!({
+            "spec": {
+                // A field the dedicated overrides do not model at all.
+                "topologySpreadConstraints": [{
+                    "maxSkew": 1,
+                    "topologyKey": "kubernetes.io/hostname",
+                    "whenUnsatisfiable": "ScheduleAnyway",
+                    "labelSelector": {"matchLabels": {"app.kubernetes.io/name": "minecraft-server"}},
+                }],
+                "terminationGracePeriodSeconds": 120,
+                "containers": [{
+                    "name": "minecraft-server",
+                    "env": [{"name": "OVERLAY_ONLY", "value": "1"}],
+                }],
+            }
+        }));
+        let context = super::GameServerBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+            owning_fleet: None,
+        };
+
+        // W
+        let pod_template = super::GameServerBuilder::get_pod_template_spec(
+            &resourceref_resolver,
+            &context,
+            &server,
+        )
+        .await
+        .unwrap();
+
+        // T
+        let spec = pod_template.spec.as_ref().unwrap();
+        assert_eq!(spec.termination_grace_period_seconds, Some(120));
+        assert_eq!(spec.topology_spread_constraints.as_ref().unwrap().len(), 1);
+
+        // The generated container is merged into, not replaced.
+        let container = &spec.containers[0];
+        assert_eq!(container.name, "minecraft-server");
+        assert!(container.image.is_some(), "generated image was dropped");
+        let env = container.env.as_ref().unwrap();
+        assert!(env.iter().any(|var| var.name == "OVERLAY_ONLY"));
+        assert!(
+            env.iter().any(|var| var.name == "SHULKER_CLUSTER_NAME"),
+            "generated env was dropped by the overlay"
+        );
+
+        // The generated volumes and init container survive too.
+        assert!(spec.init_containers.as_ref().unwrap().len() == 1);
+        assert!(spec.volumes.as_ref().unwrap().len() >= 4);
+    }
+
+    #[tokio::test]
+    async fn get_pod_template_spec_without_an_overlay_is_unchanged() {
+        // G
+        let client = create_client_mock();
+        let resourceref_resolver = ResourceRefResolver::new(client);
+        let context = super::GameServerBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+            owning_fleet: None,
+        };
+
+        // W
+        let pod_template = super::GameServerBuilder::get_pod_template_spec(
+            &resourceref_resolver,
+            &context,
+            &TEST_SERVER,
+        )
+        .await
+        .unwrap();
+
+        // T
+        assert!(pod_template
+            .spec
+            .as_ref()
+            .unwrap()
+            .termination_grace_period_seconds
+            .is_none());
     }
 
     #[tokio::test]

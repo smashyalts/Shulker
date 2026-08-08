@@ -42,6 +42,7 @@ use google_agones_crds::v1::game_server::GameServerHealthSpec;
 use google_agones_crds::v1::game_server::GameServerSpec;
 use shulker_crds::v1alpha1::proxy_fleet::ProxyFleet;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
+use shulker_kube_utils::reconcilers::merge::apply_overlay;
 
 use super::config_map::ConfigMapBuilder;
 use super::ProxyFleetReconciler;
@@ -321,14 +322,28 @@ impl<'a> FleetBuilder {
             }
         }
 
-        Ok(PodTemplateSpec {
+        let pod_template = PodTemplateSpec {
             metadata: Some(ObjectMeta {
                 labels: Some(pod_labels),
                 annotations: Some(pod_annotations),
                 ..ObjectMeta::default()
             }),
             spec: Some(pod_spec),
-        })
+        };
+
+        // Applied last so it wins over the individual overrides above, and can
+        // reach pod fields the CRD does not model.
+        match proxy_fleet
+            .spec
+            .template
+            .spec
+            .pod_overrides
+            .as_ref()
+            .and_then(|overrides| overrides.pod_template.as_ref())
+        {
+            Some(overlay) => Ok(apply_overlay(&pod_template, overlay)?),
+            None => Ok(pod_template),
+        }
     }
 
     async fn get_init_env(
@@ -993,6 +1008,65 @@ mod tests {
             .unwrap();
         assert_eq!(init_image, &crate::config::Images::get().init);
         assert!(!init_image.ends_with(":latest"));
+    }
+
+    #[tokio::test]
+    async fn get_pod_template_spec_applies_the_pod_template_overlay() {
+        // G
+        let client = create_client_mock();
+        let builder = super::FleetBuilder::new(client);
+        let mut proxy_fleet = TEST_PROXY_FLEET.clone();
+        proxy_fleet
+            .spec
+            .template
+            .spec
+            .pod_overrides
+            .as_mut()
+            .unwrap()
+            .pod_template = Some(serde_json::json!({
+            "spec": {
+                "priorityClassName": "network-critical",
+                "containers": [{
+                    "name": "proxy",
+                    "env": [{"name": "OVERLAY_ONLY", "value": "1"}],
+                }],
+            }
+        }));
+        let context = super::FleetBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+        };
+
+        // W
+        let pod_template = builder
+            .get_pod_template_spec(&context, &proxy_fleet)
+            .await
+            .unwrap();
+
+        // T
+        let spec = pod_template.spec.as_ref().unwrap();
+        assert_eq!(
+            spec.priority_class_name,
+            Some("network-critical".to_string())
+        );
+
+        let container = &spec.containers[0];
+        assert_eq!(container.name, "proxy");
+        assert!(container.image.is_some(), "generated image was dropped");
+        assert!(
+            container.readiness_probe.is_some(),
+            "generated readiness probe was dropped"
+        );
+
+        let env = container.env.as_ref().unwrap();
+        assert!(env.iter().any(|var| var.name == "OVERLAY_ONLY"));
+        assert!(
+            env.iter().any(|var| var.name == "SHULKER_CLUSTER_NAME"),
+            "generated env was dropped by the overlay"
+        );
     }
 
     #[tokio::test]

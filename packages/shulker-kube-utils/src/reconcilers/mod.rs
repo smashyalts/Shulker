@@ -2,6 +2,7 @@ use thiserror::Error;
 
 pub mod backoff;
 pub mod builder;
+pub mod merge;
 pub mod metrics;
 pub mod status;
 

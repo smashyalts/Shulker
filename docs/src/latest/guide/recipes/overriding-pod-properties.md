@@ -1,5 +1,47 @@
 # Overriding Pod properties
 
+::: tip Reaching anything the fields below do not cover
+
+`podOverrides` models a fixed set of fields. For everything else — topology
+spread constraints, priority classes, termination grace periods, sidecar
+containers, custom probes — use `podOverrides.podTemplate`, a free-form
+`PodTemplateSpec` overlay merged onto the one Shulker generates.
+
+The merge follows Kubernetes strategic merge patch semantics: objects merge key
+by key, lists whose entries carry a `name` merge by that name, everything else
+is replaced, and an explicit `null` removes a field. So this adds an environment
+variable and a spread constraint without discarding anything Shulker generated:
+
+```yaml
+podOverrides:
+  podTemplate:
+    spec:
+      priorityClassName: game-critical
+      terminationGracePeriodSeconds: 120
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: minecraft-server
+      containers:
+        - name: minecraft-server # must match, this is the merge key
+          env:
+            - name: MY_EXTRA_VAR
+              value: '1'
+```
+
+The main container is named `minecraft-server` on servers and `proxy` on
+proxies; the init container is `init-fs`. `podTemplate` is applied after the
+individual overrides, so it wins wherever both set the same field.
+
+The overlay is stored as an opaque object, so the API server does not validate
+it against the pod schema — a typo surfaces when the operator reconciles rather
+than at `kubectl apply` time.
+
+:::
+
 To suit your needs, you may need to override or complete some
 properties filled to the underlying Pod. The `podOverrides`
 property of both the `ProxyFleet` and `MinecraftServerFleet`

@@ -210,6 +210,24 @@ pub struct MinecraftServerPodOverridesSpec {
     /// Extra ports to add to the created `Pod`'s main container
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ports: Option<Vec<k8s_openapi::api::core::v1::ContainerPort>>,
+
+    /// A `PodTemplateSpec` overlay merged onto the one Shulker generates,
+    /// using the same semantics as a Kubernetes strategic merge patch:
+    /// objects merge key by key, lists whose entries have a `name` merge by
+    /// that name, everything else is replaced, and an explicit `null` removes
+    /// a field.
+    ///
+    /// This reaches the whole pod API, including fields the dedicated
+    /// overrides above do not model -- `topologySpreadConstraints`,
+    /// `priorityClassName`, `terminationGracePeriodSeconds`, sidecar
+    /// containers, probes, and so on. The main container is named
+    /// `minecraft-server`.
+    ///
+    /// Applied after the individual overrides, so it wins where both set the
+    /// same field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "crate::schemas::preserve_unknown_fields")]
+    pub pod_template: Option<serde_json::Value>,
 }
 
 /// The status object of `MinecraftServer`

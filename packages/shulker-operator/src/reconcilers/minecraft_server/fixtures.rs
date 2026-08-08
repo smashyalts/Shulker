@@ -74,6 +74,7 @@ lazy_static! {
                 volume_mounts: None,
                 volumes: None,
                 ports: None,
+                pod_template: None,
             })
         },
         status: None,
