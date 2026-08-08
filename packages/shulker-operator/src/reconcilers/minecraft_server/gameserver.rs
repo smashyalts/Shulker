@@ -19,7 +19,6 @@ use kube::Client;
 use kube::ResourceExt;
 use lazy_static::lazy_static;
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
-use shulker_crds::v1alpha1::minecraft_server::MinecraftServerVersion;
 use shulker_crds::v1alpha1::minecraft_server_fleet::MinecraftServerFleet;
 use shulker_kube_utils::reconcilers::BuilderReconcilerError;
 
@@ -37,6 +36,7 @@ use shulker_crds::v1alpha1::minecraft_server::MinecraftServer;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
 use super::config_map::ConfigMapBuilder;
+use super::flavor::Flavor;
 use super::MinecraftServerReconciler;
 
 const MINECRAFT_SERVER_SHULKER_CONFIG_DIR: &str = "/mnt/shulker/config";
@@ -135,12 +135,15 @@ impl<'a> GameServerBuilder {
         _context: &GameServerBuilderContext<'a>,
         minecraft_server: &MinecraftServer,
     ) -> Result<(), BuilderReconcilerError> {
-        if minecraft_server.spec.version.channel == MinecraftServerVersion::Minestom
-            && minecraft_server.spec.version.custom_jar.is_none()
-        {
+        let flavor = Flavor::of(&minecraft_server.spec.version.channel);
+
+        if flavor.requires_custom_jar && minecraft_server.spec.version.custom_jar.is_none() {
             return Err(BuilderReconcilerError::ValidationError(
                 std::any::type_name::<GameServerBuilder>(),
-                "a Minestom-based server requires a custom JAR to be provided".to_string(),
+                format!(
+                    "a {}-based server requires a custom JAR to be provided",
+                    minecraft_server.spec.version.channel
+                ),
             ));
         }
 
@@ -395,6 +398,16 @@ impl<'a> GameServerBuilder {
                 value: Some(spec.version.channel.to_string()),
                 ..EnvVar::default()
             },
+            EnvVar {
+                name: "SHULKER_SERVER_CONFIG_LAYOUT".to_string(),
+                value: Some(
+                    Flavor::of(&spec.version.channel)
+                        .config_layout
+                        .as_env_value()
+                        .to_string(),
+                ),
+                ..EnvVar::default()
+            },
         ];
 
         if let Some(world) = &spec.config.world {
@@ -567,11 +580,11 @@ impl<'a> GameServerBuilder {
             env.append(&mut vec![
                 EnvVar {
                     name: "TYPE".to_string(),
-                    value: Some(Self::get_type_from_version_channel(&spec.version.channel)),
+                    value: Some(Flavor::of(&spec.version.channel).image_type.to_string()),
                     ..EnvVar::default()
                 },
                 EnvVar {
-                    name: Self::get_version_env_from_version_channel(&spec.version.channel),
+                    name: Flavor::of(&spec.version.channel).version_env.to_string(),
                     value: Some(spec.version.name.clone()),
                     ..EnvVar::default()
                 },
@@ -592,12 +605,7 @@ impl<'a> GameServerBuilder {
         context: &GameServerBuilderContext<'a>,
         minecraft_server: &MinecraftServer,
     ) -> Result<Vec<ResolvedResource>, anyhow::Error> {
-        let agent_platform = match minecraft_server.spec.version.channel {
-            MinecraftServerVersion::Paper | MinecraftServerVersion::Folia => {
-                Some("paper".to_string())
-            }
-            MinecraftServerVersion::Minestom => None,
-        };
+        let agent_platform = Flavor::of(&minecraft_server.spec.version.channel).agent_platform;
 
         let mut plugin_refs: Vec<ResolvedResource> = vec![];
 
@@ -611,7 +619,7 @@ impl<'a> GameServerBuilder {
                         resourceref_resolver,
                         context.agent_config,
                         AgentSide::Server,
-                        agent_platform,
+                        agent_platform.to_string(),
                     )
                     .await?,
                     None,
@@ -631,17 +639,6 @@ impl<'a> GameServerBuilder {
         }
 
         Ok(plugin_refs)
-    }
-
-    fn get_type_from_version_channel(channel: &MinecraftServerVersion) -> String {
-        match channel {
-            MinecraftServerVersion::Paper | MinecraftServerVersion::Minestom => "PAPER".to_string(),
-            MinecraftServerVersion::Folia => "FOLIA".to_string(),
-        }
-    }
-
-    fn get_version_env_from_version_channel(_channel: &MinecraftServerVersion) -> String {
-        "VERSION".to_string()
     }
 }
 
@@ -853,6 +850,85 @@ mod tests {
                 name: "my_pull_secret".to_string()
             }])
         );
+    }
+
+    #[tokio::test]
+    async fn get_env_sets_the_image_type_for_purpur() {
+        // G
+        let client = create_client_mock();
+        let resourceref_resolver = ResourceRefResolver::new(client);
+        let mut server = TEST_SERVER.clone();
+        server.spec.version.channel =
+            shulker_crds::v1alpha1::minecraft_server::MinecraftServerVersion::Purpur;
+        server.spec.version.custom_jar = None;
+        let context = super::GameServerBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+            owning_fleet: None,
+        };
+
+        // W
+        let env = super::GameServerBuilder::get_env(&resourceref_resolver, &context, &server)
+            .await
+            .unwrap();
+
+        // T
+        let type_env = env.iter().find(|var| var.name == "TYPE").unwrap();
+        assert_eq!(type_env.value, Some("PURPUR".to_string()));
+    }
+
+    #[tokio::test]
+    async fn validate_spec_accepts_purpur_without_a_custom_jar() {
+        // G
+        let mut server = TEST_SERVER.clone();
+        server.spec.version.channel =
+            shulker_crds::v1alpha1::minecraft_server::MinecraftServerVersion::Purpur;
+        server.spec.version.custom_jar = None;
+        let context = super::GameServerBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+            owning_fleet: None,
+        };
+
+        // W
+        let result = super::GameServerBuilder::validate_spec(&context, &server);
+
+        // T
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn get_init_env_declares_the_config_layout() {
+        // G
+        let client = create_client_mock();
+        let resourceref_resolver = ResourceRefResolver::new(client);
+        let context = super::GameServerBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+            owning_fleet: None,
+        };
+
+        // W
+        let env =
+            super::GameServerBuilder::get_init_env(&resourceref_resolver, &context, &TEST_SERVER)
+                .await
+                .unwrap();
+
+        // T
+        let layout = env
+            .iter()
+            .find(|var| var.name == "SHULKER_SERVER_CONFIG_LAYOUT")
+            .unwrap();
+        assert_eq!(layout.value, Some("bukkit".to_string()));
     }
 
     #[tokio::test]

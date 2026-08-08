@@ -1,5 +1,6 @@
 ---
 source: packages/shulker-operator/src/reconcilers/minecraft_server/gameserver.rs
+assertion_line: 731
 expression: game_server
 ---
 apiVersion: agones.dev/v1

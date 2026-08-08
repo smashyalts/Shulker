@@ -1,5 +1,6 @@
 ---
 source: packages/shulker-operator/src/reconcilers/minecraft_server_fleet/config_map.rs
+assertion_line: 98
 expression: config_map
 ---
 apiVersion: v1

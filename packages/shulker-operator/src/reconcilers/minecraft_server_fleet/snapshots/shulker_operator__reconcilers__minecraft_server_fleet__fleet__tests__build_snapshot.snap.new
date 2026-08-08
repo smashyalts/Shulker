@@ -1,5 +1,6 @@
 ---
 source: packages/shulker-operator/src/reconcilers/minecraft_server_fleet/fleet.rs
+assertion_line: 209
 expression: fleet
 ---
 apiVersion: agones.dev/v1

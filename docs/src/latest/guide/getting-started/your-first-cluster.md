@@ -176,6 +176,18 @@ spec:
       config: {}
 ```
 
+::: tip Version channels
+
+`channel` selects the server flavour. Supported values are `Paper`, `Folia`,
+`Purpur`, `Pufferfish` and `Minestom`.
+
+`Purpur` and `Pufferfish` are Paper forks, so plugins, the Shulker agent and the
+generated `bukkit.yml` / `spigot.yml` / `paper-global.yml` all work unchanged --
+switching is a one-line edit. `Minestom` is not a Bukkit server: it runs no
+Shulker agent and requires `version.customJar`.
+
+:::
+
 And then apply this file:
 
 ```bash

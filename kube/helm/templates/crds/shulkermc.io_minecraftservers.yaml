@@ -2138,6 +2138,8 @@ spec:
                     - Paper
                     - Folia
                     - Minestom
+                    - Purpur
+                    - Pufferfish
                     type: string
                   customJar:
                     description: Reference to a server JAR file to download and use instead of the built-in one

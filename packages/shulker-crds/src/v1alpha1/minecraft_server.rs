@@ -66,6 +66,11 @@ pub enum MinecraftServerVersion {
     #[default]
     Paper,
     Folia,
+    /// Paper fork focused on configurability and extra gameplay options.
+    Purpur,
+    /// Paper fork focused on performance, in particular asynchronous mob AI
+    /// and pathfinding.
+    Pufferfish,
     Minestom,
 }
 

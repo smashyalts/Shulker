@@ -29,6 +29,7 @@ use self::{
 use super::{cluster_ref::resolve_cluster_ref, ReconcilerError, Result};
 
 pub mod config_map;
+pub mod flavor;
 pub mod gameserver;
 
 #[cfg(test)]

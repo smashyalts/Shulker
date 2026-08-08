@@ -1,5 +1,6 @@
 ---
-source: packages/shulker-operator/src/reconcilers/minecraft_server_fleet/config_map.rs
+source: packages/shulker-operator/src/reconcilers/minecraft_server/config_map.rs
+assertion_line: 134
 expression: config_map
 ---
 apiVersion: v1
@@ -19,6 +20,5 @@ metadata:
     app.kubernetes.io/name: config
     app.kubernetes.io/part-of: cluster-my-cluster
     minecraftcluster.shulkermc.io/name: my-cluster
-    minecraftserverfleet.shulkermc.io/name: my-server
   name: my-server-config
   namespace: default
