@@ -79,6 +79,10 @@ impl ConfigMapBuilder {
                 include_str!("../../../assets/server-init-fs.sh").to_string(),
             ),
             (
+                "shulker-fetch.sh".to_string(),
+                include_str!("../../../assets/shulker-fetch.sh").to_string(),
+            ),
+            (
                 "server.properties".to_string(),
                 vanilla::VanillaProperties::from_spec(spec).to_string(),
             ),

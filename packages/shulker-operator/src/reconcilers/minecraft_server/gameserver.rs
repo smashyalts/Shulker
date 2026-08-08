@@ -22,13 +22,13 @@ use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
 use shulker_crds::v1alpha1::minecraft_server::MinecraftServerVersion;
 use shulker_crds::v1alpha1::minecraft_server_fleet::MinecraftServerFleet;
 use shulker_kube_utils::reconcilers::BuilderReconcilerError;
-use url::Url;
 
 use crate::agent::AgentConfig;
 use crate::reconcilers::agent::get_agent_plugin_url;
 use crate::reconcilers::agent::AgentSide;
 use crate::reconcilers::redis_ref::RedisRef;
 use crate::resources::resourceref_resolver::ResourceRefResolver;
+use crate::resources::ResolvedResource;
 use google_agones_crds::v1::game_server::GameServer;
 use google_agones_crds::v1::game_server::GameServerEvictionSpec;
 use google_agones_crds::v1::game_server::GameServerHealthSpec;
@@ -398,20 +398,22 @@ impl<'a> GameServerBuilder {
         ];
 
         if let Some(world) = &spec.config.world {
-            let url = resourceref_resolver
-                .resolve(minecraft_server.namespace().as_ref().unwrap(), world)
-                .await?
-                .as_url()?;
+            let world = resourceref_resolver
+                .resolve_with_integrity(minecraft_server.namespace().as_ref().unwrap(), world)
+                .await?;
 
             env.push(EnvVar {
                 name: "SHULKER_SERVER_WORLD_URL".to_string(),
-                value: Some(url.to_string()),
+                value: Some(world.to_env_value()),
                 ..EnvVar::default()
             })
         }
 
         if !plugin_urls.is_empty() {
-            let urls: Vec<String> = plugin_urls.into_iter().map(|url| url.to_string()).collect();
+            let urls: Vec<String> = plugin_urls
+                .into_iter()
+                .map(|plugin| plugin.to_env_value())
+                .collect();
 
             env.push(EnvVar {
                 name: "SHULKER_SERVER_PLUGIN_URLS".to_string(),
@@ -422,10 +424,10 @@ impl<'a> GameServerBuilder {
 
         if let Some(patches) = &spec.config.patches {
             let urls: Vec<String> = resourceref_resolver
-                .resolve_all(minecraft_server.namespace().as_ref().unwrap(), patches)
+                .resolve_all_with_integrity(minecraft_server.namespace().as_ref().unwrap(), patches)
                 .await?
                 .into_iter()
-                .map(|url| url.to_string())
+                .map(|patch| patch.to_env_value())
                 .collect();
 
             env.push(EnvVar {
@@ -589,7 +591,7 @@ impl<'a> GameServerBuilder {
         resourceref_resolver: &ResourceRefResolver,
         context: &GameServerBuilderContext<'a>,
         minecraft_server: &MinecraftServer,
-    ) -> Result<Vec<Url>, anyhow::Error> {
+    ) -> Result<Vec<ResolvedResource>, anyhow::Error> {
         let agent_platform = match minecraft_server.spec.version.channel {
             MinecraftServerVersion::Paper | MinecraftServerVersion::Folia => {
                 Some("paper".to_string())
@@ -597,11 +599,14 @@ impl<'a> GameServerBuilder {
             MinecraftServerVersion::Minestom => None,
         };
 
-        let mut plugin_refs: Vec<Url> = vec![];
+        let mut plugin_refs: Vec<ResolvedResource> = vec![];
 
         if !minecraft_server.spec.config.skip_agent_download {
             if let Some(agent_platform) = agent_platform {
-                plugin_refs.push(
+                // The agent comes from the operator's own configured repository
+                // rather than from user input, so there is no user-supplied
+                // digest to check it against.
+                plugin_refs.push(ResolvedResource::new(
                     get_agent_plugin_url(
                         resourceref_resolver,
                         context.agent_config,
@@ -609,14 +614,18 @@ impl<'a> GameServerBuilder {
                         agent_platform,
                     )
                     .await?,
-                )
+                    None,
+                ))
             }
         }
 
         if let Some(plugins) = &minecraft_server.spec.config.plugins {
             plugin_refs.extend(
                 resourceref_resolver
-                    .resolve_all(minecraft_server.namespace().as_ref().unwrap(), plugins)
+                    .resolve_all_with_integrity(
+                        minecraft_server.namespace().as_ref().unwrap(),
+                        plugins,
+                    )
                     .await?,
             );
         }

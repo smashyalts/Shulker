@@ -27,7 +27,6 @@ use kube::ResourceExt;
 use lazy_static::lazy_static;
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
 use shulker_crds::v1alpha1::proxy_fleet::ProxyFleetTemplateVersion;
-use url::Url;
 
 use crate::agent::AgentConfig;
 use crate::reconcilers::agent::get_agent_plugin_url;
@@ -35,6 +34,7 @@ use crate::reconcilers::agent::AgentSide;
 use crate::reconcilers::minecraft_cluster::external_servers_config_map::ExternalServersConfigMapBuilder;
 use crate::reconcilers::redis_ref::RedisRef;
 use crate::resources::resourceref_resolver::ResourceRefResolver;
+use crate::resources::ResolvedResource;
 use google_agones_crds::v1::fleet::Fleet;
 use google_agones_crds::v1::fleet::FleetSpec;
 use google_agones_crds::v1::game_server::GameServerEvictionSpec;
@@ -360,7 +360,10 @@ impl<'a> FleetBuilder {
         ];
 
         if !plugin_urls.is_empty() {
-            let urls: Vec<String> = plugin_urls.into_iter().map(|url| url.to_string()).collect();
+            let urls: Vec<String> = plugin_urls
+                .into_iter()
+                .map(|plugin| plugin.to_env_value())
+                .collect();
 
             env.push(EnvVar {
                 name: "SHULKER_PROXY_PLUGIN_URLS".to_string(),
@@ -372,10 +375,10 @@ impl<'a> FleetBuilder {
         if let Some(patches) = &spec.config.patches {
             let urls: Vec<String> = self
                 .resourceref_resolver
-                .resolve_all(proxy_fleet.namespace().as_ref().unwrap(), patches)
+                .resolve_all_with_integrity(proxy_fleet.namespace().as_ref().unwrap(), patches)
                 .await?
                 .into_iter()
-                .map(|url| url.to_string())
+                .map(|patch| patch.to_env_value())
                 .collect();
 
             env.push(EnvVar {
@@ -508,7 +511,7 @@ impl<'a> FleetBuilder {
         resourceref_resolver: &ResourceRefResolver,
         context: &FleetBuilderContext<'a>,
         proxy_fleet: &ProxyFleet,
-    ) -> Result<Vec<Url>, anyhow::Error> {
+    ) -> Result<Vec<ResolvedResource>, anyhow::Error> {
         let agent_platform = match proxy_fleet.spec.template.spec.version.channel {
             ProxyFleetTemplateVersion::Velocity => Some("velocity".to_string()),
             ProxyFleetTemplateVersion::BungeeCord | ProxyFleetTemplateVersion::Waterfall => {
@@ -516,11 +519,14 @@ impl<'a> FleetBuilder {
             }
         };
 
-        let mut plugin_refs: Vec<Url> = vec![];
+        let mut plugin_refs: Vec<ResolvedResource> = vec![];
 
         if !proxy_fleet.spec.template.spec.config.skip_agent_download {
             if let Some(agent_platform) = agent_platform {
-                plugin_refs.push(
+                // The agent comes from the operator's own configured repository
+                // rather than from user input, so there is no user-supplied
+                // digest to check it against.
+                plugin_refs.push(ResolvedResource::new(
                     get_agent_plugin_url(
                         resourceref_resolver,
                         context.agent_config,
@@ -528,14 +534,15 @@ impl<'a> FleetBuilder {
                         agent_platform,
                     )
                     .await?,
-                )
+                    None,
+                ))
             }
         }
 
         if let Some(plugins) = &proxy_fleet.spec.template.spec.config.plugins {
             plugin_refs.extend(
                 resourceref_resolver
-                    .resolve_all(proxy_fleet.namespace().as_ref().unwrap(), plugins)
+                    .resolve_all_with_integrity(proxy_fleet.namespace().as_ref().unwrap(), plugins)
                     .await?,
             );
         }

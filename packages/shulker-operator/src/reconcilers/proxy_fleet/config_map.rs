@@ -56,6 +56,10 @@ impl ResourceBuilder<'_> for ConfigMapBuilder {
                 include_str!("../../../assets/proxy-init-fs.sh").to_string(),
             ),
             (
+                "shulker-fetch.sh".to_string(),
+                include_str!("../../../assets/shulker-fetch.sh").to_string(),
+            ),
+            (
                 "probe-readiness.sh".to_string(),
                 include_str!("../../../assets/proxy-probe-readiness.sh").to_string(),
             ),

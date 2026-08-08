@@ -299,6 +299,14 @@ spec:
                             description: List of optional references to patch archives to download and extract at the root of the server. Gzippied tarballs only
                             items:
                               properties:
+                                sha256:
+                                  description: |-
+                                    Expected SHA-256 digest of the referenced file, as 64 lowercase hex characters.
+
+                                    When set, the init container verifies the download against this digest and refuses to start the server if it does not match. Strongly recommended: without it, anything served at the URL is executed inside the server Pod, so a compromised or hijacked artifact host is enough to run arbitrary code in the cluster.
+                                  nullable: true
+                                  pattern: ^[a-f0-9]{64}$
+                                  type: string
                                 url:
                                   nullable: true
                                   type: string
@@ -336,6 +344,14 @@ spec:
                             description: List of references to plugins to download
                             items:
                               properties:
+                                sha256:
+                                  description: |-
+                                    Expected SHA-256 digest of the referenced file, as 64 lowercase hex characters.
+
+                                    When set, the init container verifies the download against this digest and refuses to start the server if it does not match. Strongly recommended: without it, anything served at the URL is executed inside the server Pod, so a compromised or hijacked artifact host is enough to run arbitrary code in the cluster.
+                                  nullable: true
+                                  pattern: ^[a-f0-9]{64}$
+                                  type: string
                                 url:
                                   nullable: true
                                   type: string
@@ -390,6 +406,14 @@ spec:
                             description: Reference to a world to download and extract. Gzipped tarball only
                             nullable: true
                             properties:
+                              sha256:
+                                description: |-
+                                  Expected SHA-256 digest of the referenced file, as 64 lowercase hex characters.
+
+                                  When set, the init container verifies the download against this digest and refuses to start the server if it does not match. Strongly recommended: without it, anything served at the URL is executed inside the server Pod, so a compromised or hijacked artifact host is enough to run arbitrary code in the cluster.
+                                nullable: true
+                                pattern: ^[a-f0-9]{64}$
+                                type: string
                               url:
                                 nullable: true
                                 type: string
@@ -2348,6 +2372,14 @@ spec:
                             description: Reference to a server JAR file to download and use instead of the built-in one
                             nullable: true
                             properties:
+                              sha256:
+                                description: |-
+                                  Expected SHA-256 digest of the referenced file, as 64 lowercase hex characters.
+
+                                  When set, the init container verifies the download against this digest and refuses to start the server if it does not match. Strongly recommended: without it, anything served at the URL is executed inside the server Pod, so a compromised or hijacked artifact host is enough to run arbitrary code in the cluster.
+                                nullable: true
+                                pattern: ^[a-f0-9]{64}$
+                                type: string
                               url:
                                 nullable: true
                                 type: string

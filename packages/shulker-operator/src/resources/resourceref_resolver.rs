@@ -5,7 +5,7 @@ use shulker_crds::resourceref::ResourceRefSpec;
 
 use super::{
     http_credentials::HttpCredentials, maven::resolver::MavenResolver, resourceref::ResourceRef,
-    ResourceRefError, Result,
+    ResolvedResource, ResourceRefError, Result,
 };
 
 pub struct ResourceRefResolver {
@@ -32,6 +32,40 @@ impl ResourceRefResolver {
                 Ok::<Vec<Url>, ResourceRefError>(acc)
             },
         )
+    }
+
+    /// Resolves each ref to its URL together with the digest declared on the
+    /// spec, so callers can hand both to the init container.
+    pub async fn resolve_all_with_integrity(
+        &self,
+        ns: &str,
+        refs: &[ResourceRefSpec],
+    ) -> Result<Vec<ResolvedResource>> {
+        let futs = refs.iter().map(|resourceref| self.resolve(ns, resourceref));
+        let resolved = futures::future::join_all(futs).await;
+
+        resolved
+            .into_iter()
+            .zip(refs.iter())
+            .map(|(resourceref, spec)| {
+                Ok(ResolvedResource::new(
+                    resourceref?.as_url()?,
+                    spec.sha256.clone(),
+                ))
+            })
+            .collect()
+    }
+
+    /// Resolves a single ref together with the digest declared on its spec.
+    pub async fn resolve_with_integrity(
+        &self,
+        ns: &str,
+        spec: &ResourceRefSpec,
+    ) -> Result<ResolvedResource> {
+        Ok(ResolvedResource::new(
+            self.resolve(ns, spec).await?.as_url()?,
+            spec.sha256.clone(),
+        ))
     }
 
     pub async fn resolve(&self, ns: &str, spec: &ResourceRefSpec) -> Result<ResourceRef> {

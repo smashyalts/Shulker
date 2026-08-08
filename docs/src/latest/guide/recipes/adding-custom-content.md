@@ -36,6 +36,42 @@ urlFrom:
     credentialsSecretName: example-repo-secret
 ```
 
+### Verifying integrity
+
+Whatever the source, you can declare the expected SHA-256 digest of the file.
+The init container verifies the download against it and refuses to start the
+Pod if it does not match.
+
+```yaml
+url: https://example.com/my-plugin.jar
+sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+```
+
+It works the same way alongside `urlFrom`:
+
+```yaml
+urlFrom:
+  mavenRef:
+    repositoryUrl: https://example.com/maven
+    groupId: com.example
+    artifactId: myplugin
+    version: '1.0.0'
+sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+```
+
+::: warning
+
+`sha256` is optional, but you should set it. Everything downloaded this way is
+executed inside your server Pod, so without a digest, whoever controls the URL
+— or anyone who can tamper with the response — controls what runs in your
+cluster. When it is omitted, the init container logs a warning.
+
+Note that a `mavenRef` pointing at a `-SNAPSHOT` version resolves to whatever
+the latest snapshot build is, so its digest changes over time; pin a release
+version if you want to verify it.
+
+:::
+
 ## Adding plugins <Badge type="tip" text="proxies" /> <Badge type="tip" text="servers" />
 
 Shulker can automatically download plugins from different sources and
