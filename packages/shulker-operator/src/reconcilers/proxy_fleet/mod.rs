@@ -1,14 +1,17 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use futures::StreamExt;
 use google_agones_crds::v1::{fleet::Fleet, fleet_autoscaler::FleetAutoscaler};
 use k8s_openapi::api::core::v1::{ConfigMap, Service};
 use kube::{
     api::{ListParams, PatchParams},
-    runtime::{controller::Action, watcher::Config, Controller},
+    runtime::{controller::Action, Controller},
     Api, Client, ResourceExt,
 };
-use shulker_kube_utils::reconcilers::{builder::reconcile_builder, status::patch_status};
+use shulker_kube_utils::reconcilers::{
+    backoff::FailureTracker, builder::reconcile_builder, metrics::ReconcileMetrics,
+    status::patch_status,
+};
 use tracing::*;
 
 use shulker_crds::{
@@ -35,9 +38,13 @@ mod service;
 #[cfg(test)]
 mod fixtures;
 
+const CONTROLLER_NAME: &str = "proxyfleet";
+static METRICS: ReconcileMetrics = ReconcileMetrics::new(CONTROLLER_NAME);
+
 struct ProxyFleetReconciler {
     client: kube::Client,
     agent_config: AgentConfig,
+    failures: FailureTracker,
 
     // Builders
     config_map_builder: ConfigMapBuilder,
@@ -118,7 +125,7 @@ impl ProxyFleetReconciler {
             }
         }
 
-        Ok(Action::requeue(Duration::from_secs(5 * 60)))
+        Ok(Action::requeue(super::success_requeue_delay()))
     }
 
     async fn cleanup(&self, proxy_fleet: Arc<ProxyFleet>) -> Result<Action> {
@@ -174,22 +181,59 @@ async fn reconcile(proxy_fleet: Arc<ProxyFleet>, ctx: Arc<ProxyFleetReconciler>)
         "reconciling ProxyFleet",
     );
 
-    if proxy_fleet.metadata.deletion_timestamp.is_none() {
+    let timer = METRICS.start();
+    let result = if proxy_fleet.metadata.deletion_timestamp.is_none() {
         ctx.reconcile(proxy_fleets_api.clone(), proxy_fleet.clone())
             .await
     } else {
         ctx.cleanup(proxy_fleet.clone()).await
+    };
+
+    match &result {
+        Ok(_) => {
+            timer.success();
+            ctx.failures.record_success(&object_key(&proxy_fleet));
+            METRICS.set_failing_objects(ctx.failures.failing_count());
+        }
+        Err(error) => timer.failure(error.kind()),
     }
+
+    result
+}
+
+fn object_key(proxy_fleet: &ProxyFleet) -> String {
+    format!(
+        "{}/{}",
+        proxy_fleet.namespace().unwrap_or_default(),
+        proxy_fleet.name_any()
+    )
 }
 
 fn error_policy(
-    _proxy_fleet: Arc<ProxyFleet>,
+    proxy_fleet: Arc<ProxyFleet>,
     error: &ReconcilerError,
-    _ctx: Arc<ProxyFleetReconciler>,
+    ctx: Arc<ProxyFleetReconciler>,
 ) -> Action {
-    warn!("reconcile failed: {:?}", error);
-    // ctx.metrics.reconcile_failure(&proxy_fleet, error);
-    Action::requeue(Duration::from_secs(5))
+    let key = object_key(&proxy_fleet);
+
+    // Retrying every 5s forever meant a permanently broken object hammered the
+    // API server indefinitely, and every object broken by the same cause
+    // retried in lockstep. Back off per object instead.
+    let delay = ctx.failures.record_failure(
+        key.clone(),
+        super::ERROR_REQUEUE_BASE,
+        super::ERROR_REQUEUE_MAX,
+    );
+    METRICS.set_failing_objects(ctx.failures.failing_count());
+
+    warn!(
+        object = key,
+        retry_in_secs = delay.as_secs(),
+        "reconcile failed: {:?}",
+        error
+    );
+
+    Action::requeue(delay)
 }
 
 pub async fn run(client: Client, agent_config: AgentConfig) {
@@ -202,32 +246,40 @@ pub async fn run(client: Client, agent_config: AgentConfig) {
     let context = ProxyFleetReconciler {
         client: client.clone(),
         agent_config,
+        failures: FailureTracker::new(),
         config_map_builder: ConfigMapBuilder::new(client.clone()),
         service_builder: ServiceBuilder::new(client.clone()),
         fleet_builder: FleetBuilder::new(client.clone()),
         fleet_autoscaler_builder: FleetAutoscalerBuilder::new(client.clone()),
     };
 
-    Controller::new(proxy_fleets_api, Config::default().any_semantic())
+    Controller::new(proxy_fleets_api, super::owner_watcher_config())
         .owns(
             Api::<ConfigMap>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<Service>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<Fleet>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<FleetAutoscaler>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .shutdown_on_signal()
         .run(reconcile, error_policy, context.into())
-        .filter_map(|x| async move { std::result::Result::ok(x) })
-        .for_each(|_| futures::future::ready(()))
+        .for_each(|result| {
+            // Previously `filter_map(Result::ok)` discarded terminal controller
+            // errors without a trace, so anything the error policy could not
+            // recover from vanished silently.
+            if let Err(error) = result {
+                error!("controller stream reported an error: {:?}", error);
+            }
+            futures::future::ready(())
+        })
         .await;
 }

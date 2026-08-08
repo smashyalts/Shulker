@@ -30,7 +30,6 @@ use shulker_crds::v1alpha1::proxy_fleet::ProxyFleetTemplateVersion;
 use url::Url;
 
 use crate::agent::AgentConfig;
-use crate::constants;
 use crate::reconcilers::agent::get_agent_plugin_url;
 use crate::reconcilers::agent::AgentSide;
 use crate::reconcilers::minecraft_cluster::external_servers_config_map::ExternalServersConfigMapBuilder;
@@ -182,9 +181,11 @@ impl<'a> FleetBuilder {
         context: &FleetBuilderContext<'a>,
         proxy_fleet: &ProxyFleet,
     ) -> Result<PodTemplateSpec, anyhow::Error> {
+        let images = crate::config::Images::get();
+
         let mut pod_spec = PodSpec {
             init_containers: Some(vec![Container {
-                image: Some("alpine:latest".to_string()),
+                image: Some(images.init.clone()),
                 name: "init-fs".to_string(),
                 command: Some(vec![
                     "sh".to_string(),
@@ -208,7 +209,7 @@ impl<'a> FleetBuilder {
                 ..Container::default()
             }]),
             containers: vec![Container {
-                image: Some(constants::PROXY_IMAGE.to_string()),
+                image: Some(images.proxy.clone()),
                 name: "proxy".to_string(),
                 ports: Some(vec![ContainerPort {
                     name: Some("minecraft".to_string()),
@@ -234,7 +235,7 @@ impl<'a> FleetBuilder {
             }],
             service_account_name: Some(format!(
                 "shulker-{}-proxy",
-                &proxy_fleet.spec.cluster_ref.name
+                proxy_fleet.spec.cluster_ref.name
             )),
             restart_policy: Some("Never".to_string()),
             volumes: Some(self.get_volumes(context, proxy_fleet)),
@@ -267,6 +268,13 @@ impl<'a> FleetBuilder {
             if let Some(node_selector_overrides) = &pod_overrides.node_selector {
                 pod_spec.node_selector =
                     Some(node_selector_overrides.clone().into_iter().collect());
+            }
+
+            // `serviceAccountName` is part of the published CRD schema but was
+            // never read here, so the field silently did nothing and every Pod
+            // kept the cluster-derived default.
+            if let Some(service_account_name) = &pod_overrides.service_account_name {
+                pod_spec.service_account_name = Some(service_account_name.clone());
             }
 
             pod_spec.tolerations = pod_overrides.tolerations.clone();
@@ -577,7 +585,7 @@ impl<'a> FleetBuilder {
                 secret: Some(SecretVolumeSource {
                     secret_name: Some(format!(
                         "{}-forwarding-secret",
-                        &proxy_fleet.spec.cluster_ref.name
+                        proxy_fleet.spec.cluster_ref.name
                     )),
                     ..SecretVolumeSource::default()
                 }),
@@ -943,6 +951,101 @@ mod tests {
             Some(vec![LocalObjectReference {
                 name: "my_pull_secret".to_string()
             }])
+        );
+    }
+
+    #[tokio::test]
+    async fn get_pod_template_spec_uses_the_configured_init_image() {
+        // G
+        let client = create_client_mock();
+        let builder = super::FleetBuilder::new(client);
+        let context = super::FleetBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+        };
+
+        // W
+        let pod_template = builder
+            .get_pod_template_spec(&context, &TEST_PROXY_FLEET)
+            .await
+            .unwrap();
+
+        // T
+        let init_image = pod_template
+            .spec
+            .as_ref()
+            .unwrap()
+            .init_containers
+            .as_ref()
+            .unwrap()[0]
+            .image
+            .as_ref()
+            .unwrap();
+        assert_eq!(init_image, &crate::config::Images::get().init);
+        assert!(!init_image.ends_with(":latest"));
+    }
+
+    #[tokio::test]
+    async fn get_pod_template_spec_applies_service_account_name_override() {
+        // G
+        let client = create_client_mock();
+        let builder = super::FleetBuilder::new(client);
+        let mut proxy_fleet = TEST_PROXY_FLEET.clone();
+        proxy_fleet
+            .spec
+            .template
+            .spec
+            .pod_overrides
+            .as_mut()
+            .unwrap()
+            .service_account_name = Some("my-service-account".to_string());
+        let context = super::FleetBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+        };
+
+        // W
+        let pod_template = builder
+            .get_pod_template_spec(&context, &proxy_fleet)
+            .await
+            .unwrap();
+
+        // T
+        assert_eq!(
+            pod_template.spec.as_ref().unwrap().service_account_name,
+            Some("my-service-account".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn get_pod_template_spec_defaults_service_account_name_to_the_cluster_one() {
+        // G
+        let client = create_client_mock();
+        let builder = super::FleetBuilder::new(client);
+        let context = super::FleetBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+        };
+
+        // W
+        let pod_template = builder
+            .get_pod_template_spec(&context, &TEST_PROXY_FLEET)
+            .await
+            .unwrap();
+
+        // T
+        assert_eq!(
+            pod_template.spec.as_ref().unwrap().service_account_name,
+            Some("shulker-my-cluster-proxy".to_string())
         );
     }
 

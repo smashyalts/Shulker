@@ -104,7 +104,9 @@ mod tests {
     struct ApiServerVerifier(ApiServerHandle);
 
     enum Scenario {
-        SecretFound(Secret),
+        // Boxed so the enum is not sized by the largest variant; a bare
+        // `Secret` makes it several hundred bytes wide for every value.
+        SecretFound(Box<Secret>),
         SecretNotFound,
     }
 
@@ -112,7 +114,7 @@ mod tests {
         pub fn run(self, scenario: Scenario) -> tokio::task::JoinHandle<()> {
             tokio::spawn(async move {
                 match scenario {
-                    Scenario::SecretFound(secret) => self.handle_secret_found(secret).await,
+                    Scenario::SecretFound(secret) => self.handle_secret_found(*secret).await,
                     Scenario::SecretNotFound => self.handle_secret_not_found().await,
                 }
                 .expect("scenario completed without errors");
@@ -290,7 +292,7 @@ mod tests {
             }),
             ..ResourceRefSpec::default()
         };
-        let run_server = server.run(Scenario::SecretFound(credentials_secret));
+        let run_server = server.run(Scenario::SecretFound(Box::new(credentials_secret)));
 
         // W
         let resourceref = resourceref_resolver

@@ -26,6 +26,19 @@ operator:
     # - name: MY_ENV_KEY
     #   value: 'my value'
 
+  # Images the operator injects into the workloads it creates. Leave empty to
+  # use the versions pinned in the operator build. Set these to point at a
+  # private registry mirror, or to pin a digest, for air-gapped clusters.
+  managedImages:
+    # Init container of every managed Pod. Needs a POSIX shell, wget, tar,
+    # base64 and sha256sum.
+    init: ""
+    # Default image for proxy Pods; a ProxyFleet may still override it.
+    proxy: ""
+    # Default image for Minecraft server Pods; a MinecraftServer may still
+    # override it.
+    minecraftServer: ""
+
   agones:
     allocator:
       host: agones-allocator.agones-system

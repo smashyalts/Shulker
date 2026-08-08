@@ -1,14 +1,17 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use futures::StreamExt;
 use google_agones_crds::v1::{fleet::Fleet, fleet_autoscaler::FleetAutoscaler};
 use k8s_openapi::api::core::v1::ConfigMap;
 use kube::{
     api::{ListParams, PatchParams},
-    runtime::{controller::Action, watcher::Config, Controller},
+    runtime::{controller::Action, Controller},
     Api, Client, ResourceExt,
 };
-use shulker_kube_utils::reconcilers::{builder::reconcile_builder, status::patch_status};
+use shulker_kube_utils::reconcilers::{
+    backoff::FailureTracker, builder::reconcile_builder, metrics::ReconcileMetrics,
+    status::patch_status,
+};
 use tracing::*;
 
 use shulker_crds::{
@@ -33,9 +36,13 @@ mod fleet_autoscaler;
 #[cfg(test)]
 mod fixtures;
 
+const CONTROLLER_NAME: &str = "minecraftserverfleet";
+static METRICS: ReconcileMetrics = ReconcileMetrics::new(CONTROLLER_NAME);
+
 struct MinecraftServerFleetReconciler {
     client: kube::Client,
     agent_config: AgentConfig,
+    failures: FailureTracker,
 
     // Builders
     config_map_builder: ConfigMapBuilder,
@@ -120,7 +127,7 @@ impl MinecraftServerFleetReconciler {
             }
         }
 
-        Ok(Action::requeue(Duration::from_secs(5 * 60)))
+        Ok(Action::requeue(super::success_requeue_delay()))
     }
 
     async fn cleanup(&self, minecraft_server_fleet: Arc<MinecraftServerFleet>) -> Result<Action> {
@@ -183,7 +190,8 @@ async fn reconcile(
         "reconciling MinecraftServerFleet",
     );
 
-    if minecraft_server_fleet.metadata.deletion_timestamp.is_none() {
+    let timer = METRICS.start();
+    let result = if minecraft_server_fleet.metadata.deletion_timestamp.is_none() {
         ctx.reconcile(
             minecraft_server_fleets_api.clone(),
             minecraft_server_fleet.clone(),
@@ -191,17 +199,54 @@ async fn reconcile(
         .await
     } else {
         ctx.cleanup(minecraft_server_fleet.clone()).await
+    };
+
+    match &result {
+        Ok(_) => {
+            timer.success();
+            ctx.failures
+                .record_success(&object_key(&minecraft_server_fleet));
+            METRICS.set_failing_objects(ctx.failures.failing_count());
+        }
+        Err(error) => timer.failure(error.kind()),
     }
+
+    result
+}
+
+fn object_key(minecraft_server_fleet: &MinecraftServerFleet) -> String {
+    format!(
+        "{}/{}",
+        minecraft_server_fleet.namespace().unwrap_or_default(),
+        minecraft_server_fleet.name_any()
+    )
 }
 
 fn error_policy(
-    _minecraft_server_fleet: Arc<MinecraftServerFleet>,
+    minecraft_server_fleet: Arc<MinecraftServerFleet>,
     error: &ReconcilerError,
-    _ctx: Arc<MinecraftServerFleetReconciler>,
+    ctx: Arc<MinecraftServerFleetReconciler>,
 ) -> Action {
-    warn!("reconcile failed: {:?}", error);
-    // ctx.metrics.reconcile_failure(&minecraft_server_fleet, error);
-    Action::requeue(Duration::from_secs(5))
+    let key = object_key(&minecraft_server_fleet);
+
+    // Retrying every 5s forever meant a permanently broken object hammered the
+    // API server indefinitely, and every object broken by the same cause
+    // retried in lockstep. Back off per object instead.
+    let delay = ctx.failures.record_failure(
+        key.clone(),
+        super::ERROR_REQUEUE_BASE,
+        super::ERROR_REQUEUE_MAX,
+    );
+    METRICS.set_failing_objects(ctx.failures.failing_count());
+
+    warn!(
+        object = key,
+        retry_in_secs = delay.as_secs(),
+        "reconcile failed: {:?}",
+        error
+    );
+
+    Action::requeue(delay)
 }
 
 pub async fn run(client: Client, agent_config: AgentConfig) {
@@ -217,30 +262,35 @@ pub async fn run(client: Client, agent_config: AgentConfig) {
     let context = MinecraftServerFleetReconciler {
         client: client.clone(),
         agent_config,
+        failures: FailureTracker::new(),
         config_map_builder: ConfigMapBuilder::new(client.clone()),
         fleet_builder: FleetBuilder::new(client.clone()),
         fleet_autoscaler_builder: FleetAutoscalerBuilder::new(client.clone()),
     };
 
-    Controller::new(
-        minecraft_server_fleets_api,
-        Config::default().any_semantic(),
-    )
-    .owns(
-        Api::<ConfigMap>::all(client.clone()),
-        Config::default().any_semantic(),
-    )
-    .owns(
-        Api::<Fleet>::all(client.clone()),
-        Config::default().any_semantic(),
-    )
-    .owns(
-        Api::<FleetAutoscaler>::all(client.clone()),
-        Config::default().any_semantic(),
-    )
-    .shutdown_on_signal()
-    .run(reconcile, error_policy, context.into())
-    .filter_map(|x| async move { std::result::Result::ok(x) })
-    .for_each(|_| futures::future::ready(()))
-    .await;
+    Controller::new(minecraft_server_fleets_api, super::owner_watcher_config())
+        .owns(
+            Api::<ConfigMap>::all(client.clone()),
+            super::owned_watcher_config(),
+        )
+        .owns(
+            Api::<Fleet>::all(client.clone()),
+            super::owned_watcher_config(),
+        )
+        .owns(
+            Api::<FleetAutoscaler>::all(client.clone()),
+            super::owned_watcher_config(),
+        )
+        .shutdown_on_signal()
+        .run(reconcile, error_policy, context.into())
+        .for_each(|result| {
+            // Previously `filter_map(Result::ok)` discarded terminal controller
+            // errors without a trace, so anything the error policy could not
+            // recover from vanished silently.
+            if let Err(error) = result {
+                error!("controller stream reported an error: {:?}", error);
+            }
+            futures::future::ready(())
+        })
+        .await;
 }

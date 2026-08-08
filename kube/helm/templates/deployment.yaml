@@ -33,6 +33,17 @@ spec:
             - --agones-allocator-tls-client-crt=/mnt/shulker/agones-allocator-client-tls/tls.crt
             - --agones-allocator-tls-client-key=/mnt/shulker/agones-allocator-client-tls/tls.key
             {{- end }}
+            {{- with .Values.operator.managedImages }}
+            {{- with .init }}
+            - --init-image={{ . }}
+            {{- end }}
+            {{- with .proxy }}
+            - --proxy-image={{ . }}
+            {{- end }}
+            {{- with .minecraftServer }}
+            - --minecraft-server-image={{ . }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.operator.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

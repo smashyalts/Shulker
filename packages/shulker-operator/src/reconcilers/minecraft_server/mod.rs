@@ -1,14 +1,17 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use futures::StreamExt;
 use google_agones_crds::v1::game_server::GameServer;
 use k8s_openapi::api::core::v1::ConfigMap;
 use kube::{
     api::{DeleteParams, ListParams, PatchParams},
-    runtime::{controller::Action, watcher::Config, Controller},
+    runtime::{controller::Action, Controller},
     Api, Client, ResourceExt,
 };
-use shulker_kube_utils::reconcilers::{builder::reconcile_builder, status::patch_status};
+use shulker_kube_utils::reconcilers::{
+    backoff::FailureTracker, builder::reconcile_builder, metrics::ReconcileMetrics,
+    status::patch_status,
+};
 use tracing::*;
 
 use shulker_crds::{
@@ -31,9 +34,13 @@ pub mod gameserver;
 #[cfg(test)]
 mod fixtures;
 
+const CONTROLLER_NAME: &str = "minecraftserver";
+static METRICS: ReconcileMetrics = ReconcileMetrics::new(CONTROLLER_NAME);
+
 struct MinecraftServerReconciler {
     client: kube::Client,
     agent_config: AgentConfig,
+    failures: FailureTracker,
 
     // Builders
     config_map_builder: ConfigMapBuilder,
@@ -78,6 +85,22 @@ impl MinecraftServerReconciler {
                     return Ok(Action::await_change());
                 }
 
+                // Agones publishes `status` as soon as the GameServer object
+                // exists, but only fills in `ports` once the port allocation
+                // has happened. Indexing into it unconditionally panicked the
+                // controller task for every server in the window between those
+                // two events.
+                let Some(allocated_port) = gameserver_status.ports.first() else {
+                    debug!(
+                        name = minecraft_server.name_any(),
+                        namespace = minecraft_server.namespace(),
+                        state = gameserver_status.state,
+                        "GameServer has no allocated port yet, waiting",
+                    );
+
+                    return Ok(Action::requeue(super::ERROR_REQUEUE_BASE));
+                };
+
                 let mut minecraft_server = minecraft_server.as_ref().clone();
                 if minecraft_server.status.is_none() {
                     minecraft_server.status = Some(MinecraftServerStatus::default());
@@ -86,7 +109,7 @@ impl MinecraftServerReconciler {
                 let status = minecraft_server.status.as_mut().unwrap();
 
                 status.address = gameserver_status.address.clone();
-                status.port = gameserver_status.ports.first().unwrap().port;
+                status.port = allocated_port.port;
 
                 if gameserver_status.state == "Ready" || gameserver_status.state == "Allocated" {
                     status.set_condition(
@@ -114,7 +137,7 @@ impl MinecraftServerReconciler {
             }
         }
 
-        Ok(Action::requeue(Duration::from_secs(5 * 60)))
+        Ok(Action::requeue(super::success_requeue_delay()))
     }
 
     async fn cleanup(&self, minecraft_server: Arc<MinecraftServer>) -> Result<Action> {
@@ -169,22 +192,59 @@ async fn reconcile(
         "reconciling MinecraftServer",
     );
 
-    if minecraft_server.metadata.deletion_timestamp.is_none() {
+    let timer = METRICS.start();
+    let result = if minecraft_server.metadata.deletion_timestamp.is_none() {
         ctx.reconcile(minecraft_servers_api.clone(), minecraft_server.clone())
             .await
     } else {
         ctx.cleanup(minecraft_server.clone()).await
+    };
+
+    match &result {
+        Ok(_) => {
+            timer.success();
+            ctx.failures.record_success(&object_key(&minecraft_server));
+            METRICS.set_failing_objects(ctx.failures.failing_count());
+        }
+        Err(error) => timer.failure(error.kind()),
     }
+
+    result
+}
+
+fn object_key(minecraft_server: &MinecraftServer) -> String {
+    format!(
+        "{}/{}",
+        minecraft_server.namespace().unwrap_or_default(),
+        minecraft_server.name_any()
+    )
 }
 
 fn error_policy(
-    _minecraft_server: Arc<MinecraftServer>,
+    minecraft_server: Arc<MinecraftServer>,
     error: &ReconcilerError,
-    _ctx: Arc<MinecraftServerReconciler>,
+    ctx: Arc<MinecraftServerReconciler>,
 ) -> Action {
-    warn!("reconcile failed: {:?}", error);
-    // ctx.metrics.reconcile_failure(&minecraft_server, error);
-    Action::requeue(Duration::from_secs(5))
+    let key = object_key(&minecraft_server);
+
+    // Retrying every 5s forever meant a permanently broken object hammered the
+    // API server indefinitely, and every object broken by the same cause
+    // retried in lockstep. Back off per object instead.
+    let delay = ctx.failures.record_failure(
+        key.clone(),
+        super::ERROR_REQUEUE_BASE,
+        super::ERROR_REQUEUE_MAX,
+    );
+    METRICS.set_failing_objects(ctx.failures.failing_count());
+
+    warn!(
+        object = key,
+        retry_in_secs = delay.as_secs(),
+        "reconcile failed: {:?}",
+        error
+    );
+
+    Action::requeue(delay)
 }
 
 pub async fn run(client: Client, agent_config: AgentConfig) {
@@ -200,22 +260,30 @@ pub async fn run(client: Client, agent_config: AgentConfig) {
     let context = MinecraftServerReconciler {
         client: client.clone(),
         agent_config,
+        failures: FailureTracker::new(),
         config_map_builder: ConfigMapBuilder::new(client.clone()),
         gameserver_builder: GameServerBuilder::new(client.clone()),
     };
 
-    Controller::new(minecraft_servers_api, Config::default().any_semantic())
+    Controller::new(minecraft_servers_api, super::owner_watcher_config())
         .owns(
             Api::<ConfigMap>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<GameServer>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .shutdown_on_signal()
         .run(reconcile, error_policy, context.into())
-        .filter_map(|x| async move { std::result::Result::ok(x) })
-        .for_each(|_| futures::future::ready(()))
+        .for_each(|result| {
+            // Previously `filter_map(Result::ok)` discarded terminal controller
+            // errors without a trace, so anything the error policy could not
+            // recover from vanished silently.
+            if let Err(error) = result {
+                error!("controller stream reported an error: {:?}", error);
+            }
+            futures::future::ready(())
+        })
         .await;
 }

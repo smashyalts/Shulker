@@ -46,7 +46,7 @@ impl MavenMetadata {
         match &self.versioning.snapshot_versions {
             Some(versions) => {
                 let mut versions = versions.versions.clone();
-                versions.sort_by(|a, b| b.updated.cmp(&a.updated));
+                versions.sort_by_key(|v| std::cmp::Reverse(v.updated));
                 versions
                     .into_iter()
                     .find(|v| v.extension == extension && v.classifier.as_deref() == classifier)

@@ -5,6 +5,7 @@ use shulker_kube_utils::{lease, metrics};
 use shulker_operator::{
     agent::AgentConfig,
     api::{self, GrpcServerContext},
+    config::{self, Images},
     constants, reconcilers,
 };
 use shulker_utils::telemetry;
@@ -68,6 +69,35 @@ struct Args {
         env = "SHULKER_AGENT_VERSION"
     )]
     agent_version: String,
+
+    /// Image used by the `init-fs` init container of every managed Pod.
+    /// Override to pull from a private registry or to pin a digest
+    #[arg(
+        long,
+        default_value_t = config::DEFAULT_INIT_IMAGE.to_string(),
+        value_name = "image",
+        env = "SHULKER_INIT_IMAGE"
+    )]
+    init_image: String,
+
+    /// Default image used by proxy Pods, unless overridden per `ProxyFleet`
+    #[arg(
+        long,
+        default_value_t = config::DEFAULT_PROXY_IMAGE.to_string(),
+        value_name = "image",
+        env = "SHULKER_PROXY_IMAGE"
+    )]
+    proxy_image: String,
+
+    /// Default image used by Minecraft server Pods, unless overridden per
+    /// `MinecraftServer`
+    #[arg(
+        long,
+        default_value_t = config::DEFAULT_MINECRAFT_SERVER_IMAGE.to_string(),
+        value_name = "image",
+        env = "SHULKER_MINECRAFT_SERVER_IMAGE"
+    )]
+    minecraft_server_image: String,
 }
 
 #[tokio::main]
@@ -75,6 +105,13 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     telemetry::init().await;
+
+    Images::init(Images {
+        init: args.init_image,
+        proxy: args.proxy_image,
+        minecraft_server: args.minecraft_server_image,
+    })
+    .expect("image configuration is installed exactly once, at startup");
 
     let client = Client::try_default().await?;
     let cancellation_token = tokio_util::sync::CancellationToken::new();

@@ -37,13 +37,13 @@ impl SdkService for SdkServiceGrpc {
             .map_err(|e| match e {
                 kube::Error::Api(_) => Status::not_found(format!(
                     "fleet {} in namespace {} not found",
-                    &request.get_ref().name,
-                    &request.get_ref().namespace,
+                    request.get_ref().name,
+                    request.get_ref().namespace,
                 )),
                 e => Status::internal(format!(
                     "failed to get fleet {} in namespace {}: {}",
-                    &request.get_ref().name,
-                    &request.get_ref().namespace,
+                    request.get_ref().name,
+                    request.get_ref().namespace,
                     e
                 )),
             })?;
@@ -84,8 +84,8 @@ impl SdkService for SdkServiceGrpc {
         } else {
             return Err(Status::resource_exhausted(format!(
                 "no game server available for fleet {} in namespace {}",
-                &request.get_ref().name,
-                &request.get_ref().namespace,
+                request.get_ref().name,
+                request.get_ref().namespace,
             )));
         };
 

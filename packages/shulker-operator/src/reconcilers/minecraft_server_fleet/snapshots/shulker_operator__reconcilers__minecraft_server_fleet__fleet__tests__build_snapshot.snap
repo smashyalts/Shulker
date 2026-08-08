@@ -138,7 +138,7 @@ spec:
                   value: "https://maven.jeremylvln.fr/repository/shulker-snapshots/io/shulkermc/shulker-server-agent/0.0.0-test-cfg/shulker-server-agent-0.0.0-test-cfg-paper.jar;https://example.com/my_plugin.jar"
                 - name: SHULKER_SERVER_PATCH_URLS
                   value: "https://example.com/my_patch.tar.gz"
-              image: "alpine:latest"
+              image: "alpine:3.21"
               name: init-fs
               securityContext:
                 allowPrivilegeEscalation: false

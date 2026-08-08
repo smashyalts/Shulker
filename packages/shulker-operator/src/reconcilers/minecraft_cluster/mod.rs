@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use external_servers_config_map::ExternalServersConfigMapBuilder;
 use futures::StreamExt;
@@ -12,12 +12,13 @@ use kube::{
     runtime::{
         controller::Action,
         finalizer::{finalizer, Event as Finalizer},
-        watcher::Config,
         Controller,
     },
     Api, Client, ResourceExt,
 };
-use shulker_kube_utils::reconcilers::builder::reconcile_builder;
+use shulker_kube_utils::reconcilers::{
+    backoff::FailureTracker, builder::reconcile_builder, metrics::ReconcileMetrics,
+};
 use tracing::*;
 
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
@@ -53,8 +54,12 @@ pub mod fixtures;
 
 static FINALIZER: &str = "minecraftclusters.shulkermc.io";
 
+const CONTROLLER_NAME: &str = "minecraftcluster";
+static METRICS: ReconcileMetrics = ReconcileMetrics::new(CONTROLLER_NAME);
+
 struct MinecraftClusterReconciler {
     client: kube::Client,
+    failures: FailureTracker,
 
     // Builders
     forwarding_secret_builder: ForwardingSecretBuilder,
@@ -122,7 +127,7 @@ impl MinecraftClusterReconciler {
         .await
         .map_err(ReconcilerError::BuilderError)?;
 
-        Ok(Action::requeue(Duration::from_secs(5 * 60)))
+        Ok(Action::requeue(super::success_requeue_delay()))
     }
 
     async fn cleanup(&self, cluster: Arc<MinecraftCluster>) -> Result<Action> {
@@ -177,24 +182,63 @@ async fn reconcile(
         "reconciling MinecraftCluster",
     );
 
-    finalizer(&clusters_api, FINALIZER, cluster, |event| async {
+    let key = object_key(&cluster);
+    let timer = METRICS.start();
+
+    let result = finalizer(&clusters_api, FINALIZER, cluster, |event| async {
         match event {
             Finalizer::Apply(cluster) => ctx.reconcile(clusters_api.clone(), cluster.clone()).await,
             Finalizer::Cleanup(cluster) => ctx.cleanup(cluster.clone()).await,
         }
     })
     .await
-    .map_err(|e| ReconcilerError::FinalizerError(Box::new(e)))
+    .map_err(|e| ReconcilerError::FinalizerError(Box::new(e)));
+
+    match &result {
+        Ok(_) => {
+            timer.success();
+            ctx.failures.record_success(&key);
+            METRICS.set_failing_objects(ctx.failures.failing_count());
+        }
+        Err(error) => timer.failure(error.kind()),
+    }
+
+    result
+}
+
+fn object_key(cluster: &MinecraftCluster) -> String {
+    format!(
+        "{}/{}",
+        cluster.namespace().unwrap_or_default(),
+        cluster.name_any()
+    )
 }
 
 fn error_policy(
-    _cluster: Arc<MinecraftCluster>,
+    cluster: Arc<MinecraftCluster>,
     error: &ReconcilerError,
-    _ctx: Arc<MinecraftClusterReconciler>,
+    ctx: Arc<MinecraftClusterReconciler>,
 ) -> Action {
-    warn!("reconcile failed: {:?}", error);
-    // ctx.metrics.reconcile_failure(&cluster, error);
-    Action::requeue(Duration::from_secs(5))
+    let key = object_key(&cluster);
+
+    // Retrying every 5s forever meant a permanently broken object hammered the
+    // API server indefinitely, and every object broken by the same cause
+    // retried in lockstep. Back off per object instead.
+    let delay = ctx.failures.record_failure(
+        key.clone(),
+        super::ERROR_REQUEUE_BASE,
+        super::ERROR_REQUEUE_MAX,
+    );
+    METRICS.set_failing_objects(ctx.failures.failing_count());
+
+    warn!(
+        object = key,
+        retry_in_secs = delay.as_secs(),
+        "reconcile failed: {:?}",
+        error
+    );
+
+    Action::requeue(delay)
 }
 
 pub async fn run(client: Client) {
@@ -206,6 +250,7 @@ pub async fn run(client: Client) {
 
     let context = MinecraftClusterReconciler {
         client: client.clone(),
+        failures: FailureTracker::new(),
         forwarding_secret_builder: ForwardingSecretBuilder::new(client.clone()),
         headless_service_builder: HeadlessServiceBuilder::new(client.clone()),
         proxy_service_account_builder: ProxyServiceAccountBuilder::new(client.clone()),
@@ -224,38 +269,45 @@ pub async fn run(client: Client) {
         external_servers_config_map_builder: ExternalServersConfigMapBuilder::new(client.clone()),
     };
 
-    Controller::new(clusters_api, Config::default().any_semantic())
+    Controller::new(clusters_api, super::owner_watcher_config())
         .owns(
             Api::<ConfigMap>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<Secret>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<ServiceAccount>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<Role>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<RoleBinding>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<Service>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .owns(
             Api::<StatefulSet>::all(client.clone()),
-            Config::default().any_semantic(),
+            super::owned_watcher_config(),
         )
         .shutdown_on_signal()
         .run(reconcile, error_policy, context.into())
-        .filter_map(|x| async move { std::result::Result::ok(x) })
-        .for_each(|_| futures::future::ready(()))
+        .for_each(|result| {
+            // Previously `filter_map(Result::ok)` discarded terminal controller
+            // errors without a trace, so anything the error policy could not
+            // recover from vanished silently.
+            if let Err(error) = result {
+                error!("controller stream reported an error: {:?}", error);
+            }
+            futures::future::ready(())
+        })
         .await;
 }

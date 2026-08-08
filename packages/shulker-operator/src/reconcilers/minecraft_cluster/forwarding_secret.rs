@@ -72,20 +72,13 @@ impl ForwardingSecretBuilder {
     fn get_existing_or_new_forwarding_secret(existing_secret: Option<&Secret>) -> String {
         match existing_secret {
             Some(existing_secret) => {
-                if existing_secret.data.is_some() {
-                    existing_secret
-                        .data
-                        .as_ref()
-                        .unwrap()
-                        .get(SECRET_DATA_KEY)
+                if let Some(data) = existing_secret.data.as_ref() {
+                    data.get(SECRET_DATA_KEY)
                         .cloned()
                         .map(|key| String::from_utf8(key.0).unwrap())
                         .unwrap_or_else(ForwardingSecretBuilder::create_forwarding_secret)
-                } else if existing_secret.string_data.is_some() {
-                    existing_secret
-                        .string_data
-                        .as_ref()
-                        .unwrap()
+                } else if let Some(string_data) = existing_secret.string_data.as_ref() {
+                    string_data
                         .get(SECRET_DATA_KEY)
                         .cloned()
                         .unwrap_or_else(ForwardingSecretBuilder::create_forwarding_secret)
@@ -161,8 +154,7 @@ mod tests {
         assert!(secret
             .string_data
             .unwrap()
-            .get(super::SECRET_DATA_KEY)
-            .is_some());
+            .contains_key(super::SECRET_DATA_KEY));
     }
 
     #[tokio::test]

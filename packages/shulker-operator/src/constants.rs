@@ -13,5 +13,5 @@ pub const SHULKER_PLUGIN_VERSION: &str =
 #[cfg(not(debug_assertions))]
 pub const SHULKER_PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub const PROXY_IMAGE: &str = "itzg/mc-proxy:2025.1.0-java21";
-pub const MINECRAFT_SERVER_IMAGE: &str = "itzg/minecraft-server:2025.1.0-java21";
+// Container images moved to `crate::config::Images` so they can be overridden
+// at startup for private registries and air-gapped clusters.
