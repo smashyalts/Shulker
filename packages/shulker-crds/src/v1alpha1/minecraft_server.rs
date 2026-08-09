@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
-use kube::CustomResource;
+use kube::{CustomResource, KubeSchema};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{Display, IntoStaticStr};
@@ -43,8 +43,13 @@ pub struct MinecraftServerSpec {
     pub pod_overrides: Option<MinecraftServerPodOverridesSpec>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, KubeSchema)]
 #[serde(rename_all = "camelCase")]
+// `channel` is defaulted by the API server, so it is always set by the time
+// this runs. Previously this was only caught by `GameServerBuilder::validate_spec`
+// during reconciliation, so a bad spec applied cleanly and then silently never
+// produced a Pod.
+#[x_kube(validation = "self.channel != 'Minestom' || has(self.customJar)")]
 pub struct MinecraftServerVersionSpec {
     /// Channel of the version to use. Defaults to Paper
     #[serde(default)]

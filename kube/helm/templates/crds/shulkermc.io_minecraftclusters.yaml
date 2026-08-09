@@ -84,6 +84,8 @@ spec:
                 required:
                 - type
                 type: object
+                x-kubernetes-validations:
+                - rule: self.type != 'Provided' || has(self.provided)
             type: object
           status:
             description: The status object of `MinecraftCluster`

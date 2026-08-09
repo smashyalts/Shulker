@@ -109,6 +109,8 @@ spec:
                               type: object
                           type: object
                       type: object
+                      x-kubernetes-validations:
+                      - rule: has(self.url) != has(self.urlFrom)
                     nullable: true
                     type: array
                   plugins:
@@ -154,6 +156,8 @@ spec:
                               type: object
                           type: object
                       type: object
+                      x-kubernetes-validations:
+                      - rule: has(self.url) != has(self.urlFrom)
                     nullable: true
                     type: array
                   proxyForwardingMode:
@@ -216,6 +220,8 @@ spec:
                             type: object
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - rule: has(self.url) != has(self.urlFrom)
                 type: object
               podOverrides:
                 description: Overrides for values to be injected in the created `Pod` of this `MinecraftServer`
@@ -2193,12 +2199,16 @@ spec:
                             type: object
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - rule: has(self.url) != has(self.urlFrom)
                   name:
                     description: Name of the version to use
                     type: string
                 required:
                 - name
                 type: object
+                x-kubernetes-validations:
+                - rule: self.channel != 'Minestom' || has(self.customJar)
             required:
             - clusterRef
             - config

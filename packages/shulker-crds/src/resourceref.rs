@@ -1,8 +1,12 @@
+use kube::KubeSchema;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, KubeSchema)]
 #[serde(rename_all = "camelCase")]
+// Rejected at admission instead of failing the reconcile with `InvalidSpec`
+// long after `kubectl apply` reported success.
+#[x_kube(validation = "has(self.url) != has(self.urlFrom)")]
 pub struct ResourceRefSpec {
     pub url: Option<String>,
     pub url_from: Option<ResourceRefFromSpec>,

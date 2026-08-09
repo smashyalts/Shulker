@@ -1,4 +1,4 @@
-use kube::CustomResource;
+use kube::{CustomResource, KubeSchema};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{Display, IntoStaticStr};
@@ -31,8 +31,10 @@ pub struct MinecraftClusterSpec {
     pub external_servers: Option<Vec<MinecraftClusterExternalServerSpec>>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, KubeSchema)]
 #[serde(rename_all = "camelCase")]
+// `RedisRef::from_cluster` unwraps `provided` when the type is `Provided`.
+#[x_kube(validation = "self.type != 'Provided' || has(self.provided)")]
 pub struct MinecraftClusterRedisSpec {
     /// Type of Redis deployment to use. Shulker can provided a single-node
     /// managed Redis to use for development purposes. Production workload
