@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use google_agones_sdk::allocation::{AllocationRequest, GameServerSelector, MetaPatch};
 use kube::{Api, ResourceExt};
 use shulker_crds::v1alpha1::minecraft_server_fleet::MinecraftServerFleet;
-use shulker_sdk::{sdk_service_server::SdkService, FleetAllocationReply, FleetAllocationRequest};
+use shulker_sdk::{FleetAllocationReply, FleetAllocationRequest, sdk_service_server::SdkService};
 use tonic::{Request, Response, Status};
 
 use crate::summon::summon_from_minecraft_server_fleet;

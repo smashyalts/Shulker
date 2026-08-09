@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use k8s_openapi::api::core::v1::ConfigMap;
-use kube::core::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
+use kube::core::ObjectMeta;
 
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
@@ -72,7 +72,7 @@ impl ExternalServersConfigMapBuilder {
     }
 
     fn get_content_from_server_list(cluster: &MinecraftCluster) -> String {
-        serde_yaml::to_string(cluster.spec.external_servers.as_ref().unwrap()).unwrap()
+        serde_norway::to_string(cluster.spec.external_servers.as_ref().unwrap()).unwrap()
     }
 }
 
@@ -80,7 +80,7 @@ impl ExternalServersConfigMapBuilder {
 mod tests {
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-    use crate::reconcilers::minecraft_cluster::fixtures::{create_client_mock, TEST_CLUSTER};
+    use crate::reconcilers::minecraft_cluster::fixtures::{TEST_CLUSTER, create_client_mock};
 
     #[test]
     fn name_contains_cluster_name() {

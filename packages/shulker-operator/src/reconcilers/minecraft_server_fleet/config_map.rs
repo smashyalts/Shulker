@@ -1,8 +1,8 @@
 use k8s_openapi::api::core::v1::ConfigMap;
-use kube::core::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
+use kube::core::ObjectMeta;
 
 use shulker_crds::v1alpha1::minecraft_server_fleet::MinecraftServerFleet;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
@@ -69,7 +69,7 @@ mod tests {
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
     use crate::reconcilers::minecraft_server_fleet::fixtures::{
-        create_client_mock, TEST_SERVER_FLEET,
+        TEST_SERVER_FLEET, create_client_mock,
     };
 
     #[test]

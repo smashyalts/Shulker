@@ -5,10 +5,10 @@ use std::{
 
 use futures::StreamExt;
 use google_open_match_sdk::{
-    backend_service_client::BackendServiceClient, AssignTicketsRequest, Assignment,
-    AssignmentGroup, FetchMatchesRequest, Match,
+    AssignTicketsRequest, Assignment, AssignmentGroup, FetchMatchesRequest, Match,
+    backend_service_client::BackendServiceClient,
 };
-use shulker_sdk::{sdk_service_client::SdkServiceClient, FleetAllocationRequest};
+use shulker_sdk::{FleetAllocationRequest, sdk_service_client::SdkServiceClient};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;

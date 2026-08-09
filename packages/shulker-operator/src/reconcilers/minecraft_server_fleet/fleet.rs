@@ -18,8 +18,8 @@ use shulker_crds::v1alpha1::minecraft_server::MinecraftServerSpec;
 use shulker_crds::v1alpha1::minecraft_server_fleet::MinecraftServerFleet;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-use super::config_map::ConfigMapBuilder;
 use super::MinecraftServerFleetReconciler;
+use super::config_map::ConfigMapBuilder;
 
 pub struct FleetBuilder {
     client: Client,
@@ -172,7 +172,7 @@ mod tests {
         constants,
         reconcilers::{
             minecraft_cluster::fixtures::TEST_CLUSTER,
-            minecraft_server_fleet::fixtures::{create_client_mock, TEST_SERVER_FLEET},
+            minecraft_server_fleet::fixtures::{TEST_SERVER_FLEET, create_client_mock},
         },
     };
 

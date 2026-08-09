@@ -4,9 +4,9 @@ use k8s_openapi::{
     apimachinery::pkg::apis::meta::v1::MicroTime,
 };
 use kube::{
+    Api,
     api::{Patch, PatchParams, PostParams},
     core::ObjectMeta,
-    Api,
 };
 use tracing::*;
 

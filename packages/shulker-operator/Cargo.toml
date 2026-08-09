@@ -33,12 +33,11 @@ google-agones-sdk = { workspace = true, features = ["client"] }
 http.workspace = true
 k8s-openapi.workspace = true
 kube.workspace = true
-lazy_static.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde-xml-rs.workspace = true
-serde_yaml.workspace = true
+serde_norway.workspace = true
 shulker-crds.workspace = true
 shulker-kube-utils.workspace = true
 shulker-sdk = { workspace = true, features = ["server"] }

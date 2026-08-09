@@ -5,9 +5,9 @@ use std::{
 
 use futures::StreamExt;
 use kube::{
-    api::ListParams,
-    runtime::{controller::Action, watcher::Config, Controller},
     Api, Client, ResourceExt,
+    api::ListParams,
+    runtime::{Controller, controller::Action, watcher::Config},
 };
 use tracing::*;
 

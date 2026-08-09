@@ -2,10 +2,10 @@ use k8s_openapi::api::core::v1::Service;
 use k8s_openapi::api::core::v1::ServicePort;
 use k8s_openapi::api::core::v1::ServiceSpec;
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-use kube::core::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
+use kube::core::ObjectMeta;
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftClusterRedisDeploymentType;
 
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
@@ -91,7 +91,7 @@ mod tests {
     };
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-    use crate::reconcilers::minecraft_cluster::fixtures::{create_client_mock, TEST_CLUSTER};
+    use crate::reconcilers::minecraft_cluster::fixtures::{TEST_CLUSTER, create_client_mock};
 
     #[test]
     fn name_contains_cluster_name() {

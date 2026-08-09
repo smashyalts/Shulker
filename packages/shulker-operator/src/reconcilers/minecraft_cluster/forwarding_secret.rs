@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use k8s_openapi::api::core::v1::Secret;
-use kube::core::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
+use kube::core::ObjectMeta;
 
 use rand::distr::Alphanumeric;
 use rand::distr::SampleString;
@@ -100,12 +100,12 @@ impl ForwardingSecretBuilder {
 mod tests {
     use std::collections::BTreeMap;
 
-    use k8s_openapi::{api::core::v1::Secret, ByteString};
+    use k8s_openapi::{ByteString, api::core::v1::Secret};
     use kube::core::ObjectMeta;
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
     use crate::reconcilers::minecraft_cluster::{
-        fixtures::{create_client_mock, TEST_CLUSTER},
+        fixtures::{TEST_CLUSTER, create_client_mock},
         forwarding_secret::SECRET_DATA_KEY,
     };
 
@@ -151,10 +151,12 @@ mod tests {
             .unwrap();
 
         // T
-        assert!(secret
-            .string_data
-            .unwrap()
-            .contains_key(super::SECRET_DATA_KEY));
+        assert!(
+            secret
+                .string_data
+                .unwrap()
+                .contains_key(super::SECRET_DATA_KEY)
+        );
     }
 
     #[tokio::test]

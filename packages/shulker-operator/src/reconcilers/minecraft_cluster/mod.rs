@@ -8,13 +8,13 @@ use k8s_openapi::api::{
     rbac::v1::{Role, RoleBinding},
 };
 use kube::{
+    Api, Client, ResourceExt,
     api::ListParams,
     runtime::{
-        controller::Action,
-        finalizer::{finalizer, Event as Finalizer},
         Controller,
+        controller::Action,
+        finalizer::{Event as Finalizer, finalizer},
     },
-    Api, Client, ResourceExt,
 };
 use shulker_kube_utils::reconcilers::{
     backoff::FailureTracker, builder::reconcile_builder, metrics::ReconcileMetrics,

@@ -13,6 +13,13 @@ yanked = "deny"
 # every advisory source rather than only the RustSec-authored ones. This is what
 # catches a dependency being archived upstream while it is still resolving fine.
 unmaintained = "all"
+ignore = [
+    # rustls-pemfile is archived upstream; its functionality moved into
+    # rustls-pki-types. It reaches us transitively through kube/reqwest, and the
+    # latest release is a thin wrapper over the replacement, so there is nothing
+    # to act on until those crates drop it.
+    { id = "RUSTSEC-2025-0134", reason = "archived upstream; transitive through kube/reqwest, latest release wraps rustls-pki-types" },
+]
 
 [bans]
 multiple-versions = "warn"
@@ -33,7 +40,13 @@ allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-3-Clause",
-    "ISC"
+    "ISC",
+    # Permissive, OSI-approved, and unavoidable: the ICU crates behind `idna`
+    # (and therefore `url` and `reqwest`) are all Unicode-3.0.
+    "Unicode-3.0",
+    # Permissive. Reaches us through `foldhash` via `hashbrown`, and was
+    # already granted per-crate to const_format below.
+    "Zlib"
 ]
 exceptions = [
     { name = "const_format", allow = ["Zlib"] },

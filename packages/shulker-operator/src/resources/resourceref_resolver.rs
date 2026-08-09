@@ -4,8 +4,8 @@ use url::Url;
 use shulker_crds::resourceref::ResourceRefSpec;
 
 use super::{
-    http_credentials::HttpCredentials, maven::resolver::MavenResolver, resourceref::ResourceRef,
-    ResolvedResource, ResourceRefError, Result,
+    ResolvedResource, ResourceRefError, Result, http_credentials::HttpCredentials,
+    maven::resolver::MavenResolver, resourceref::ResourceRef,
 };
 
 pub struct ResourceRefResolver {
@@ -126,9 +126,9 @@ impl ResourceRefResolver {
 #[cfg(test)]
 mod tests {
     use http::{Request, Response};
-    use k8s_openapi::{api::core::v1::Secret, ByteString};
+    use k8s_openapi::{ByteString, api::core::v1::Secret};
     use kube::client::Body;
-    use kube::{core::ObjectMeta, Client, ResourceExt};
+    use kube::{Client, ResourceExt, core::ObjectMeta};
     use shulker_crds::resourceref::{ResourceRefFromSpec, ResourceRefSpec};
     use url::Url;
 

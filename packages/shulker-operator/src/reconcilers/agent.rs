@@ -3,7 +3,7 @@ use url::Url;
 
 use crate::{
     agent::AgentConfig,
-    resources::{resourceref_resolver::ResourceRefResolver, ResourceRefError},
+    resources::{ResourceRefError, resourceref_resolver::ResourceRefResolver},
 };
 
 pub enum AgentSide {

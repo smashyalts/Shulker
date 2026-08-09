@@ -6,8 +6,7 @@ use google_agones_crds::v1::fleet_autoscaler::{
 use http::{Request, Response};
 use k8s_openapi::{api::core::v1::EnvVar, apimachinery::pkg::util::intstr::IntOrString};
 use kube::client::Body;
-use kube::{core::ObjectMeta, Client};
-use lazy_static::lazy_static;
+use kube::{Client, core::ObjectMeta};
 use shulker_crds::{
     resourceref::ResourceRefSpec,
     schemas::{FleetAutoscalingSpec, TemplateSpec},
@@ -22,9 +21,10 @@ use shulker_crds::{
         minecraft_server_fleet::{MinecraftServerFleet, MinecraftServerFleetSpec},
     },
 };
+use std::sync::LazyLock;
 
-lazy_static! {
-    pub static ref TEST_SERVER_FLEET: MinecraftServerFleet = MinecraftServerFleet {
+pub static TEST_SERVER_FLEET: LazyLock<MinecraftServerFleet> =
+    LazyLock::new(|| MinecraftServerFleet {
         metadata: ObjectMeta {
             namespace: Some("default".to_string()),
             name: Some("my-server".to_string()),
@@ -37,11 +37,11 @@ lazy_static! {
                 metadata: Some(ObjectMeta {
                     labels: Some(BTreeMap::from([(
                         "test-label/shulkermc.io".to_string(),
-                        "my-value".to_string()
+                        "my-value".to_string(),
                     )])),
                     annotations: Some(BTreeMap::from([(
                         "test-annotation/shulkermc.io".to_string(),
-                        "my-value".to_string()
+                        "my-value".to_string(),
                     )])),
                     ..ObjectMeta::default()
                 }),
@@ -75,7 +75,7 @@ lazy_static! {
                             MinecraftServerConfigurationProxyForwardingMode::Velocity,
                         lifecycle_strategy:
                             MinecraftServerConfigurationLifecycleStrategy::AllocateWhenNotEmpty,
-                        skip_agent_download: false
+                        skip_agent_download: false,
                     },
                     pod_overrides: Some(MinecraftServerPodOverridesSpec {
                         image: None,
@@ -88,7 +88,7 @@ lazy_static! {
                         affinity: None,
                         node_selector: Some(BTreeMap::from([(
                             "beta.kubernetes.io/os".to_string(),
-                            "linux".to_string()
+                            "linux".to_string(),
                         )])),
                         tolerations: None,
                         service_account_name: None,
@@ -96,7 +96,7 @@ lazy_static! {
                         volumes: None,
                         ports: None,
                         pod_template: None,
-                    })
+                    }),
                 },
             },
             autoscaling: Some(FleetAutoscalingSpec {
@@ -108,12 +108,11 @@ lazy_static! {
                         buffer_size: IntOrString::Int(2),
                     }),
                     webhook: None,
-                })
+                }),
             }),
         },
         status: None,
-    };
-}
+    });
 
 pub fn create_client_mock() -> Client {
     let (mock_service, _) = tower_test::mock::pair::<Request<Body>, Response<Body>>();

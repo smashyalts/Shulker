@@ -24,17 +24,17 @@ use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
-use lazy_static::lazy_static;
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
 use shulker_crds::v1alpha1::proxy_fleet::ProxyFleetTemplateVersion;
+use std::sync::LazyLock;
 
 use crate::agent::AgentConfig;
-use crate::reconcilers::agent::get_agent_plugin_url;
 use crate::reconcilers::agent::AgentSide;
+use crate::reconcilers::agent::get_agent_plugin_url;
 use crate::reconcilers::minecraft_cluster::external_servers_config_map::ExternalServersConfigMapBuilder;
 use crate::reconcilers::redis_ref::RedisRef;
-use crate::resources::resourceref_resolver::ResourceRefResolver;
 use crate::resources::ResolvedResource;
+use crate::resources::resourceref_resolver::ResourceRefResolver;
 use google_agones_crds::v1::fleet::Fleet;
 use google_agones_crds::v1::fleet::FleetSpec;
 use google_agones_crds::v1::game_server::GameServerEvictionSpec;
@@ -44,8 +44,8 @@ use shulker_crds::v1alpha1::proxy_fleet::ProxyFleet;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 use shulker_kube_utils::reconcilers::merge::apply_overlay;
 
-use super::config_map::ConfigMapBuilder;
 use super::ProxyFleetReconciler;
+use super::config_map::ConfigMapBuilder;
 
 const PROXY_SHULKER_CONFIG_DIR: &str = "/mnt/shulker/config";
 const PROXY_SHULKER_FORWARDING_SECRET_DIR: &str = "/mnt/shulker/forwarding-secret";
@@ -53,19 +53,17 @@ const PROXY_DATA_DIR: &str = "/server";
 const PROXY_DRAIN_LOCK_DIR: &str = "/mnt/drain-lock";
 const PROXY_SHULKER_EXTERNAL_SERVERS_DIR: &str = "/mnt/shulker/external-servers";
 
-lazy_static! {
-    static ref PROXY_SECURITY_CONTEXT: SecurityContext = SecurityContext {
-        allow_privilege_escalation: Some(false),
-        read_only_root_filesystem: Some(true),
-        run_as_non_root: Some(true),
-        run_as_user: Some(1000),
-        capabilities: Some(Capabilities {
-            drop: Some(vec!["ALL".to_string()]),
-            ..Capabilities::default()
-        }),
-        ..SecurityContext::default()
-    };
-}
+static PROXY_SECURITY_CONTEXT: LazyLock<SecurityContext> = LazyLock::new(|| SecurityContext {
+    allow_privilege_escalation: Some(false),
+    read_only_root_filesystem: Some(true),
+    run_as_non_root: Some(true),
+    run_as_user: Some(1000),
+    capabilities: Some(Capabilities {
+        drop: Some(vec!["ALL".to_string()]),
+        ..Capabilities::default()
+    }),
+    ..SecurityContext::default()
+});
 
 pub struct FleetBuilder {
     client: Client,
@@ -714,7 +712,7 @@ mod tests {
         constants,
         reconcilers::{
             minecraft_cluster::fixtures::TEST_CLUSTER,
-            proxy_fleet::fixtures::{create_client_mock, TEST_PROXY_FLEET},
+            proxy_fleet::fixtures::{TEST_PROXY_FLEET, create_client_mock},
         },
         resources::resourceref_resolver::ResourceRefResolver,
     };

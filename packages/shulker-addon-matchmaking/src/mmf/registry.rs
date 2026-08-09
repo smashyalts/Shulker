@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use google_open_match_sdk::{function_config, FunctionConfig};
+use google_open_match_sdk::{FunctionConfig, function_config};
 use shulker_crds::matchmaking::v1alpha1::matchmaking_queue::MatchmakingQueueMMFBuiltInType;
 use tracing::info;
 

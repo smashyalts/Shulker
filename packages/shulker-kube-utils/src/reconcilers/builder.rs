@@ -2,10 +2,10 @@ use std::fmt::Debug;
 use tracing::*;
 
 use kube::{
-    api::{DeleteParams, Patch, PatchParams, PostParams},
     Api, ResourceExt,
+    api::{DeleteParams, Patch, PatchParams, PostParams},
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::reconcilers::BuilderReconcilerError;
 

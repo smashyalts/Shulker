@@ -2,8 +2,8 @@ use std::sync::LazyLock;
 use std::time::Instant;
 
 use prometheus::{
-    register_histogram_vec, register_int_counter_vec, register_int_gauge_vec, HistogramVec,
-    IntCounterVec, IntGaugeVec,
+    HistogramVec, IntCounterVec, IntGaugeVec, register_histogram_vec, register_int_counter_vec,
+    register_int_gauge_vec,
 };
 
 /// Reconciliation metrics for every controller in the operator.
@@ -112,7 +112,7 @@ impl ReconcileTimer {
 
 #[cfg(test)]
 mod tests {
-    use super::{ReconcileMetrics, RECONCILE_ERRORS_TOTAL, RECONCILE_TOTAL};
+    use super::{RECONCILE_ERRORS_TOTAL, RECONCILE_TOTAL, ReconcileMetrics};
 
     #[test]
     fn success_and_failure_are_counted_separately() {

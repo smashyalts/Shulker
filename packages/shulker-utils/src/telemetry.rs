@@ -1,4 +1,4 @@
-use tracing_subscriber::{prelude::*, EnvFilter, Registry};
+use tracing_subscriber::{EnvFilter, Registry, prelude::*};
 
 pub async fn init() {
     #[cfg(not(debug_assertions))]

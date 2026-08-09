@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
 /// Key Kubernetes uses to identify elements of most `PodSpec` lists.

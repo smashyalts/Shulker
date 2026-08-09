@@ -1,5 +1,5 @@
 use k8s_openapi::api::apps::v1::DeploymentStrategy;
-use kube::{core::ObjectMeta, CustomResource};
+use kube::{CustomResource, core::ObjectMeta};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

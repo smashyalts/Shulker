@@ -1,0 +1,49 @@
+## Gradle version catalog.
+##
+## This used to be declared inline in settings.gradle.kts. Gradle picks
+## gradle/libs.versions.toml up automatically, and the file form is what
+## dependency tooling (Renovate, `gradle dependencyUpdates`, IDE inspections)
+## expects to find.
+
+[versions]
+kotlin = "2.1.20"
+kubernetes-client = "7.4.0"
+grpc = "1.77.0"
+adventure = "4.26.1"
+
+# Pinned to the version the installed @nx/gradle expects; its own migration for
+# 21.2.x sets exactly this. It used to be declared as `+`, which resolved to
+# whatever was newest at build time and made builds irreproducible.
+nx-project-graph = "0.1.0"
+
+[libraries]
+adventure-api = { module = "net.kyori:adventure-api", version.ref = "adventure" }
+adventure-platform-bungeecord = { module = "net.kyori:adventure-platform-bungeecord", version = "4.4.1" }
+adventure-text-serializer-gson = { module = "net.kyori:adventure-text-serializer-gson", version.ref = "adventure" }
+annotations-api = { module = "org.apache.tomcat:annotations-api", version = "6.0.53" }
+apache-commons-io = { module = "commons-io:commons-io", version = "2.22.0" }
+bungeecord-api = { module = "net.md-5:bungeecord-api", version = "1.21-R0.4" }
+folia-api = { module = "dev.folia:folia-api", version = "1.20.6-R0.1-SNAPSHOT" }
+guava = { module = "com.google.guava:guava", version = "33.6.0-jre" }
+grpc-common-protos = { module = "com.google.api.grpc:proto-google-common-protos", version = "2.72.0" }
+grpc-netty-shaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }
+grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
+grpc-services = { module = "io.grpc:grpc-services", version.ref = "grpc" }
+grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
+jedis = { module = "redis.clients:jedis", version = "6.2.0" }
+kubernetes-client = { module = "io.fabric8:kubernetes-client", version.ref = "kubernetes-client" }
+kubernetes-client-api = { module = "io.fabric8:kubernetes-client-api", version.ref = "kubernetes-client" }
+kubernetes-client-http = { module = "io.fabric8:kubernetes-httpclient-okhttp", version.ref = "kubernetes-client" }
+minestom = { module = "net.minestom:minestom-snapshots", version = "1_21-9219e96f76" }
+protobuf = { module = "com.google.protobuf:protobuf-java", version = "4.35.1" }
+snakeyaml = { module = "org.yaml:snakeyaml", version = "2.6" }
+velocity-api = { module = "com.velocitypowered:velocity-api", version = "3.4.0" }
+
+[plugins]
+buildconfig = { id = "com.github.gmazzo.buildconfig", version = "5.7.1" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version = "1.23.8" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version = "12.3.0" }
+nx-project-graph = { id = "dev.nx.gradle.project-graph", version.ref = "nx-project-graph" }
+shadow = { id = "com.gradleup.shadow", version = "8.3.11" }

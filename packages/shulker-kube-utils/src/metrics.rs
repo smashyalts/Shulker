@@ -1,7 +1,7 @@
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::Response;
-use axum::{routing::get, Router};
+use axum::{Router, routing::get};
 use tracing::*;
 
 pub fn create_http_server(addr: String) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {

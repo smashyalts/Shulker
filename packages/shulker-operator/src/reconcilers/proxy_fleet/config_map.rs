@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use k8s_openapi::api::core::v1::ConfigMap;
-use kube::core::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
+use kube::core::ObjectMeta;
 use shulker_crds::v1alpha1::proxy_fleet::ProxyFleetTemplateVersion;
 
 use shulker_crds::v1alpha1::proxy_fleet::ProxyFleet;
@@ -122,7 +122,7 @@ mod tests {
     use shulker_crds::v1alpha1::proxy_fleet::ProxyFleetTemplateVersion;
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-    use crate::reconcilers::proxy_fleet::fixtures::{create_client_mock, TEST_PROXY_FLEET};
+    use crate::reconcilers::proxy_fleet::fixtures::{TEST_PROXY_FLEET, create_client_mock};
 
     #[test]
     fn name_contains_fleet_name() {
@@ -181,11 +181,13 @@ mod tests {
             .unwrap();
 
         // T
-        assert!(config_map
-            .data
-            .as_ref()
-            .unwrap()
-            .contains_key("probe-readiness.sh"));
+        assert!(
+            config_map
+                .data
+                .as_ref()
+                .unwrap()
+                .contains_key("probe-readiness.sh")
+        );
     }
 
     #[tokio::test]
@@ -202,16 +204,20 @@ mod tests {
             .unwrap();
 
         // T
-        assert!(config_map
-            .data
-            .as_ref()
-            .unwrap()
-            .contains_key("server-icon.png"));
-        assert!(config_map
-            .data
-            .as_ref()
-            .unwrap()
-            .contains_key("velocity-config.toml"));
+        assert!(
+            config_map
+                .data
+                .as_ref()
+                .unwrap()
+                .contains_key("server-icon.png")
+        );
+        assert!(
+            config_map
+                .data
+                .as_ref()
+                .unwrap()
+                .contains_key("velocity-config.toml")
+        );
     }
 
     #[tokio::test]
@@ -227,16 +233,20 @@ mod tests {
         let config_map = builder.build(&fleet, &name, None, None).await.unwrap();
 
         // T
-        assert!(config_map
-            .data
-            .as_ref()
-            .unwrap()
-            .contains_key("server-icon.png"));
-        assert!(config_map
-            .data
-            .as_ref()
-            .unwrap()
-            .contains_key("bungeecord-config.yml"));
+        assert!(
+            config_map
+                .data
+                .as_ref()
+                .unwrap()
+                .contains_key("server-icon.png")
+        );
+        assert!(
+            config_map
+                .data
+                .as_ref()
+                .unwrap()
+                .contains_key("bungeecord-config.yml")
+        );
     }
 }
 
@@ -337,7 +347,7 @@ mod bungeecord {
 
     impl Display for BungeeCordYml {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            writeln!(f, "{}", serde_yaml::to_string(&self).unwrap())
+            writeln!(f, "{}", serde_norway::to_string(&self).unwrap())
         }
     }
 

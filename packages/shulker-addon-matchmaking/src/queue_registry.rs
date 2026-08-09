@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use google_open_match_sdk::{
-    function_config, FunctionConfig, MatchProfile, Pool, TagPresentFilter,
+    FunctionConfig, MatchProfile, Pool, TagPresentFilter, function_config,
 };
 use kube::ResourceExt;
 use shulker_crds::{

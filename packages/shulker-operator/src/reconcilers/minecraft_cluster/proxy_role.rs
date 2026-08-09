@@ -1,9 +1,9 @@
 use k8s_openapi::api::rbac::v1::PolicyRule;
 use k8s_openapi::api::rbac::v1::Role;
-use kube::core::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
+use kube::core::ObjectMeta;
 
 use super::MinecraftClusterReconciler;
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
@@ -86,7 +86,7 @@ impl ProxyRoleBuilder {
 mod tests {
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-    use crate::reconcilers::minecraft_cluster::fixtures::{create_client_mock, TEST_CLUSTER};
+    use crate::reconcilers::minecraft_cluster::fixtures::{TEST_CLUSTER, create_client_mock};
 
     #[test]
     fn name_contains_cluster_name() {

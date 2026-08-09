@@ -54,7 +54,7 @@ macro_rules! try_decode_any {
 
 macro_rules! create_extension_encoder_decoder {
     ($target:ty, $target_name:literal, $typ:ty, $name:literal, $key:ident) => {
-        paste::item! {
+        pastey::item! {
             pub fn [< set_ $name _in_ $target_name >] (target: &mut $target, value: $typ) {
                 target.extensions.insert(
                     $key.to_string(),
@@ -111,7 +111,7 @@ mod tests {
 
     macro_rules! create_encoder_decoder_tests {
         ($target:ty, $target_name:literal, $typ:ty, $name:literal, $key:literal, $value:expr) => {
-            paste::item! {
+            pastey::item! {
                 #[test]
                 fn [< set_ $name _in_ $target_name >] () {
                     // G

@@ -1,9 +1,9 @@
 use kube::{
+    Api, ResourceExt,
     api::{Patch, PatchParams},
     core::object::HasStatus,
-    Api, ResourceExt,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::reconcilers::Result;
 

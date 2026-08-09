@@ -17,17 +17,17 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
-use lazy_static::lazy_static;
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
 use shulker_crds::v1alpha1::minecraft_server_fleet::MinecraftServerFleet;
 use shulker_kube_utils::reconcilers::BuilderReconcilerError;
+use std::sync::LazyLock;
 
 use crate::agent::AgentConfig;
-use crate::reconcilers::agent::get_agent_plugin_url;
 use crate::reconcilers::agent::AgentSide;
+use crate::reconcilers::agent::get_agent_plugin_url;
 use crate::reconcilers::redis_ref::RedisRef;
-use crate::resources::resourceref_resolver::ResourceRefResolver;
 use crate::resources::ResolvedResource;
+use crate::resources::resourceref_resolver::ResourceRefResolver;
 use google_agones_crds::v1::game_server::GameServer;
 use google_agones_crds::v1::game_server::GameServerEvictionSpec;
 use google_agones_crds::v1::game_server::GameServerHealthSpec;
@@ -36,27 +36,25 @@ use shulker_crds::v1alpha1::minecraft_server::MinecraftServer;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 use shulker_kube_utils::reconcilers::merge::apply_overlay;
 
+use super::MinecraftServerReconciler;
 use super::config_map::ConfigMapBuilder;
 use super::flavor::Flavor;
-use super::MinecraftServerReconciler;
 
 const MINECRAFT_SERVER_SHULKER_CONFIG_DIR: &str = "/mnt/shulker/config";
 const MINECRAFT_SERVER_CONFIG_DIR: &str = "/config";
 const MINECRAFT_SERVER_DATA_DIR: &str = "/data";
 
-lazy_static! {
-    static ref PROXY_SECURITY_CONTEXT: SecurityContext = SecurityContext {
-        allow_privilege_escalation: Some(false),
-        read_only_root_filesystem: Some(true),
-        run_as_non_root: Some(true),
-        run_as_user: Some(1000),
-        capabilities: Some(Capabilities {
-            drop: Some(vec!["ALL".to_string()]),
-            ..Capabilities::default()
-        }),
-        ..SecurityContext::default()
-    };
-}
+static SERVER_SECURITY_CONTEXT: LazyLock<SecurityContext> = LazyLock::new(|| SecurityContext {
+    allow_privilege_escalation: Some(false),
+    read_only_root_filesystem: Some(true),
+    run_as_non_root: Some(true),
+    run_as_user: Some(1000),
+    capabilities: Some(Capabilities {
+        drop: Some(vec!["ALL".to_string()]),
+        ..Capabilities::default()
+    }),
+    ..SecurityContext::default()
+});
 
 pub struct GameServerBuilder {
     client: Client,
@@ -194,7 +192,7 @@ impl<'a> GameServerBuilder {
                 env: Some(
                     Self::get_init_env(resourceref_resolver, context, minecraft_server).await?,
                 ),
-                security_context: Some(PROXY_SECURITY_CONTEXT.clone()),
+                security_context: Some(SERVER_SECURITY_CONTEXT.clone()),
                 volume_mounts: Some(vec![
                     VolumeMount {
                         name: "shulker-config".to_string(),
@@ -220,7 +218,7 @@ impl<'a> GameServerBuilder {
                 }]),
                 env: Some(Self::get_env(resourceref_resolver, context, minecraft_server).await?),
                 image_pull_policy: Some("IfNotPresent".to_string()),
-                security_context: Some(PROXY_SECURITY_CONTEXT.clone()),
+                security_context: Some(SERVER_SECURITY_CONTEXT.clone()),
                 volume_mounts: Some(vec![
                     VolumeMount {
                         name: "server-config".to_string(),
@@ -664,14 +662,14 @@ mod tests {
         resourceref::ResourceRefSpec, schemas::ImageOverrideSpec,
         v1alpha1::minecraft_server::MinecraftServerVersion,
     };
-    use shulker_kube_utils::reconcilers::{builder::ResourceBuilder, BuilderReconcilerError};
+    use shulker_kube_utils::reconcilers::{BuilderReconcilerError, builder::ResourceBuilder};
 
     use crate::{
         agent::AgentConfig,
         constants,
         reconcilers::{
             minecraft_cluster::fixtures::TEST_CLUSTER,
-            minecraft_server::fixtures::{create_client_mock, TEST_SERVER},
+            minecraft_server::fixtures::{TEST_SERVER, create_client_mock},
         },
         resources::resourceref_resolver::ResourceRefResolver,
     };
@@ -1067,12 +1065,14 @@ mod tests {
         .unwrap();
 
         // T
-        assert!(pod_template
-            .spec
-            .as_ref()
-            .unwrap()
-            .termination_grace_period_seconds
-            .is_none());
+        assert!(
+            pod_template
+                .spec
+                .as_ref()
+                .unwrap()
+                .termination_grace_period_seconds
+                .is_none()
+        );
     }
 
     #[tokio::test]

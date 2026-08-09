@@ -85,8 +85,8 @@ pub type Result<T, E = ReconcilerError> = std::result::Result<T, E>;
 #[cfg(test)]
 mod tests {
     use super::{
-        success_requeue_delay, ReconcilerError, ERROR_REQUEUE_BASE, ERROR_REQUEUE_MAX,
-        SUCCESS_REQUEUE_INTERVAL, SUCCESS_REQUEUE_JITTER,
+        ERROR_REQUEUE_BASE, ERROR_REQUEUE_MAX, ReconcilerError, SUCCESS_REQUEUE_INTERVAL,
+        SUCCESS_REQUEUE_JITTER, success_requeue_delay,
     };
 
     #[test]

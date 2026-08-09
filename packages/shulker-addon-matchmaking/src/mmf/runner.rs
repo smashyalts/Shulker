@@ -1,11 +1,11 @@
 use futures::StreamExt;
 use google_open_match_sdk::{
-    query_service_client::QueryServiceClient, Backfill, Match, MatchProfile, Pool,
-    QueryBackfillsRequest, QueryTicketsRequest, RunResponse, Ticket,
+    Backfill, Match, MatchProfile, Pool, QueryBackfillsRequest, QueryTicketsRequest, RunResponse,
+    Ticket, query_service_client::QueryServiceClient,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{transport::Channel, Status};
+use tonic::{Status, transport::Channel};
 
 pub trait MatchSupplier {
     fn create_matches(

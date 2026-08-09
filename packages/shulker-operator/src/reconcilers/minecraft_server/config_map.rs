@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use k8s_openapi::api::core::v1::ConfigMap;
-use kube::core::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
+use kube::core::ObjectMeta;
 
 use shulker_crds::v1alpha1::minecraft_server::MinecraftServer;
 use shulker_crds::v1alpha1::minecraft_server::MinecraftServerConfigurationSpec;
@@ -106,7 +106,7 @@ impl ConfigMapBuilder {
 mod tests {
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-    use crate::reconcilers::minecraft_server::fixtures::{create_client_mock, TEST_SERVER};
+    use crate::reconcilers::minecraft_server::fixtures::{TEST_SERVER, create_client_mock};
 
     #[test]
     fn name_contains_server_name() {
@@ -269,7 +269,7 @@ mod bukkit {
 
     impl Display for BukkitYml {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            writeln!(f, "{}", serde_yaml::to_string(&self).unwrap())
+            writeln!(f, "{}", serde_norway::to_string(&self).unwrap())
         }
     }
 
@@ -362,7 +362,7 @@ mod spigot {
 
     impl Display for SpigotYml {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            writeln!(f, "{}", serde_yaml::to_string(&self).unwrap())
+            writeln!(f, "{}", serde_norway::to_string(&self).unwrap())
         }
     }
 
@@ -468,7 +468,7 @@ mod paper {
 
     impl Display for PaperGlobalYml {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            writeln!(f, "{}", serde_yaml::to_string(&self).unwrap())
+            writeln!(f, "{}", serde_norway::to_string(&self).unwrap())
         }
     }
 

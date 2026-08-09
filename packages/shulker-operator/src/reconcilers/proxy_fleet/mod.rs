@@ -4,9 +4,9 @@ use futures::StreamExt;
 use google_agones_crds::v1::{fleet::Fleet, fleet_autoscaler::FleetAutoscaler};
 use k8s_openapi::api::core::v1::{ConfigMap, Service};
 use kube::{
-    api::{ListParams, PatchParams},
-    runtime::{controller::Action, Controller},
     Api, Client, ResourceExt,
+    api::{ListParams, PatchParams},
+    runtime::{Controller, controller::Action},
 };
 use shulker_kube_utils::reconcilers::{
     backoff::FailureTracker, builder::reconcile_builder, metrics::ReconcileMetrics,
@@ -28,7 +28,7 @@ use self::{
     service::ServiceBuilder,
 };
 
-use super::{cluster_ref::resolve_cluster_ref, ReconcilerError, Result};
+use super::{ReconcilerError, Result, cluster_ref::resolve_cluster_ref};
 
 mod config_map;
 mod fleet;

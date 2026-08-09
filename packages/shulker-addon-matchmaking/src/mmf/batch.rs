@@ -2,10 +2,10 @@ use std::{cmp::min, pin::Pin};
 
 use futures::Stream;
 use google_open_match_sdk::{
-    match_function_server::MatchFunction, query_service_client::QueryServiceClient, Backfill,
-    Match, MatchProfile, Pool, RunRequest, RunResponse, Ticket,
+    Backfill, Match, MatchProfile, Pool, RunRequest, RunResponse, Ticket,
+    match_function_server::MatchFunction, query_service_client::QueryServiceClient,
 };
-use tonic::{transport::Channel, Response, Status};
+use tonic::{Response, Status, transport::Channel};
 use tracing::*;
 
 use crate::extensions::{

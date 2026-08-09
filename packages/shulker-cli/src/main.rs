@@ -1,15 +1,15 @@
-use clap::{arg, ArgMatches, Command};
+use clap::{ArgMatches, Command, arg};
 
 use kube::Client;
 use shulker_sdk::sdk_service_client::SdkServiceClient;
 use tonic::transport::Channel;
 use tracing::{debug, info};
 
-use shulker_cli::commands;
 use shulker_cli::CliContext;
-use tracing_subscriber::layer::SubscriberExt;
+use shulker_cli::commands;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Registry;
+use tracing_subscriber::layer::SubscriberExt;
 
 fn configure_logger() {
     let logger = tracing_subscriber::fmt::layer().compact();

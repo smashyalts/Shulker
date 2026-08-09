@@ -3,7 +3,7 @@ use backon::ExponentialBuilder;
 use backon::Retryable;
 use google_agones_crds::v1::{fleet::Fleet, game_server::GameServer};
 use kube::api::ListParams;
-use kube::{api::PostParams, core::ObjectMeta, Api, Client, Error, Resource, ResourceExt};
+use kube::{Api, Client, Error, Resource, ResourceExt, api::PostParams, core::ObjectMeta};
 use rand::distr::{Alphanumeric, SampleString};
 use shulker_crds::v1alpha1::minecraft_server_fleet::MinecraftServerFleet;
 use std::collections::HashMap;

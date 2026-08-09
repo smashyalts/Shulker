@@ -8,8 +8,8 @@ use google_agones_crds::v1::fleet_autoscaler::FleetAutoscalerSpec;
 use shulker_crds::v1alpha1::proxy_fleet::ProxyFleet;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-use super::fleet::FleetBuilder;
 use super::ProxyFleetReconciler;
+use super::fleet::FleetBuilder;
 
 pub struct FleetAutoscalerBuilder {
     client: Client,
@@ -86,7 +86,7 @@ impl FleetAutoscalerBuilder {
 mod tests {
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-    use crate::reconcilers::proxy_fleet::fixtures::{create_client_mock, TEST_PROXY_FLEET};
+    use crate::reconcilers::proxy_fleet::fixtures::{TEST_PROXY_FLEET, create_client_mock};
 
     #[test]
     fn name_contains_fleet_name() {

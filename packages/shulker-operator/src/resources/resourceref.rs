@@ -1,4 +1,4 @@
-use super::{http_credentials::HttpCredentials, ResourceRefError, Result};
+use super::{ResourceRefError, Result, http_credentials::HttpCredentials};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MavenArtifact {

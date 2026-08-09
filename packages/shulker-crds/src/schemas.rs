@@ -46,7 +46,7 @@ pub struct FleetAutoscalingSpec {
 /// reachable without paying for the schema, at the cost of client-side
 /// validation of the overlay.
 pub fn preserve_unknown_fields(
-    _generator: &mut schemars::gen::SchemaGenerator,
+    _generator: &mut schemars::r#gen::SchemaGenerator,
 ) -> schemars::schema::Schema {
     let mut schema = schemars::schema::SchemaObject {
         instance_type: Some(schemars::schema::InstanceType::Object.into()),

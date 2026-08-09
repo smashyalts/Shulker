@@ -4,9 +4,9 @@ use futures::StreamExt;
 use google_agones_crds::v1::game_server::GameServer;
 use k8s_openapi::api::core::v1::ConfigMap;
 use kube::{
-    api::{DeleteParams, ListParams, PatchParams},
-    runtime::{controller::Action, Controller},
     Api, Client, ResourceExt,
+    api::{DeleteParams, ListParams, PatchParams},
+    runtime::{Controller, controller::Action},
 };
 use shulker_kube_utils::reconcilers::{
     backoff::FailureTracker, builder::reconcile_builder, metrics::ReconcileMetrics,
@@ -26,7 +26,7 @@ use self::{
     gameserver::{GameServerBuilder, GameServerBuilderContext},
 };
 
-use super::{cluster_ref::resolve_cluster_ref, ReconcilerError, Result};
+use super::{ReconcilerError, Result, cluster_ref::resolve_cluster_ref};
 
 pub mod config_map;
 pub mod flavor;

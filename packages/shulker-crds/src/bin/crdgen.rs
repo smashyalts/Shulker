@@ -1,12 +1,10 @@
 use kube::CustomResourceExt;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::Write;
 use std::path::Path;
 
 macro_rules! generate_crd {
-    ($crd_type:ty) => {{
-        generate_crd!($crd_type, "")
-    }};
+    ($crd_type:ty) => {{ generate_crd!($crd_type, "") }};
     ($crd_type:ty, $component:literal) => {{
         let group = <$crd_type>::api_resource().group;
         let plural = <$crd_type>::api_resource().plural;
@@ -35,7 +33,7 @@ macro_rules! generate_crd {
         File::create(path)
             .unwrap()
             .write_all(
-                serde_yaml::to_string(&<$crd_type>::crd())
+                serde_norway::to_string(&<$crd_type>::crd())
                     .unwrap()
                     .as_bytes(),
             )

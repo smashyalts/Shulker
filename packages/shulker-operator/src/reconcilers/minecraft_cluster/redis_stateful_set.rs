@@ -16,39 +16,38 @@ use k8s_openapi::api::core::v1::VolumeMount;
 use k8s_openapi::api::core::v1::VolumeResourceRequirements;
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
-use kube::core::ObjectMeta;
 use kube::Api;
 use kube::Client;
 use kube::ResourceExt;
-use lazy_static::lazy_static;
+use kube::core::ObjectMeta;
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftClusterRedisDeploymentType;
+use std::sync::LazyLock;
 
-use super::redis_service::RedisServiceBuilder;
 use super::MinecraftClusterReconciler;
+use super::redis_service::RedisServiceBuilder;
 use shulker_crds::v1alpha1::minecraft_cluster::MinecraftCluster;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
 const REDIS_IMAGE: &str = "redis:7-alpine";
 const REDIS_DATA_DIR: &str = "/data";
 
-lazy_static! {
-    static ref REDIS_POD_SECURITY_CONTEXT: PodSecurityContext = PodSecurityContext {
+static REDIS_POD_SECURITY_CONTEXT: LazyLock<PodSecurityContext> =
+    LazyLock::new(|| PodSecurityContext {
         run_as_user: Some(1000),
         run_as_group: Some(1000),
         run_as_non_root: Some(true),
         fs_group: Some(1000),
         ..PodSecurityContext::default()
-    };
-    static ref REDIS_SECURITY_CONTEXT: SecurityContext = SecurityContext {
-        allow_privilege_escalation: Some(false),
-        read_only_root_filesystem: Some(true),
-        capabilities: Some(Capabilities {
-            drop: Some(vec!["ALL".to_string()]),
-            ..Capabilities::default()
-        }),
-        ..SecurityContext::default()
-    };
-}
+    });
+static REDIS_SECURITY_CONTEXT: LazyLock<SecurityContext> = LazyLock::new(|| SecurityContext {
+    allow_privilege_escalation: Some(false),
+    read_only_root_filesystem: Some(true),
+    capabilities: Some(Capabilities {
+        drop: Some(vec!["ALL".to_string()]),
+        ..Capabilities::default()
+    }),
+    ..SecurityContext::default()
+});
 
 pub struct RedisStatefulSetBuilder {
     client: Client,
@@ -192,7 +191,7 @@ mod tests {
     };
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-    use crate::reconcilers::minecraft_cluster::fixtures::{create_client_mock, TEST_CLUSTER};
+    use crate::reconcilers::minecraft_cluster::fixtures::{TEST_CLUSTER, create_client_mock};
 
     #[test]
     fn name_contains_cluster_name() {

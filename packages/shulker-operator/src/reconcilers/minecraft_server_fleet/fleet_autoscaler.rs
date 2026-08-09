@@ -8,8 +8,8 @@ use google_agones_crds::v1::fleet_autoscaler::FleetAutoscalerSpec;
 use shulker_crds::v1alpha1::minecraft_server_fleet::MinecraftServerFleet;
 use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
-use super::fleet::FleetBuilder;
 use super::MinecraftServerFleetReconciler;
+use super::fleet::FleetBuilder;
 
 pub struct FleetAutoscalerBuilder {
     client: Client,
@@ -87,7 +87,7 @@ mod tests {
     use shulker_kube_utils::reconcilers::builder::ResourceBuilder;
 
     use crate::reconcilers::minecraft_server_fleet::fixtures::{
-        create_client_mock, TEST_SERVER_FLEET,
+        TEST_SERVER_FLEET, create_client_mock,
     };
 
     #[test]

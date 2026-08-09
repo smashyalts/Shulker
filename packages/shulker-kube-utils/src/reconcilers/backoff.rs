@@ -91,7 +91,7 @@ impl FailureTracker {
 mod tests {
     use std::time::Duration;
 
-    use super::{exponential, jittered, FailureTracker};
+    use super::{FailureTracker, exponential, jittered};
 
     #[test]
     fn jittered_stays_within_the_requested_window() {

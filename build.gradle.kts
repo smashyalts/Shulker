@@ -9,9 +9,9 @@ plugins {
     id("jacoco")
     id("maven-publish")
     id("signing")
-    id("dev.nx.gradle.project-graph") version("+") apply false
-    kotlin("jvm") version libs.versions.kotlin.get()
-    kotlin("kapt") version libs.versions.kotlin.get()
+    alias(libs.plugins.nx.project.graph) apply false
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.shadow)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt)
@@ -51,7 +51,9 @@ subprojects {
 
     repositories {
         mavenCentral()
-        maven(url = "https://oss.sonatype.org/content/repositories/snapshots")
+        // oss.sonatype.org is the legacy OSSRH host, which has been retired in
+        // favour of the Central Portal.
+        maven(url = "https://central.sonatype.com/repository/maven-snapshots/")
         maven(url = "https://repo.papermc.io/repository/maven-public/")
     }
 
@@ -92,8 +94,10 @@ subprojects {
 
         tasks {
             compileKotlin {
-                kotlinOptions {
-                    allWarningsAsErrors = true
+                // `kotlinOptions` is deprecated in Kotlin 2.x in favour of the
+                // lazy `compilerOptions` DSL.
+                compilerOptions {
+                    allWarningsAsErrors.set(true)
                 }
             }
         }
