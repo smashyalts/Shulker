@@ -14,7 +14,11 @@ jobs:
   preview:
     runs-on: ubuntu-latest
 
-    if: github.event_name == 'push'
+    # Upstream only. This job needs a GPG signing key, Nexus credentials and a
+    # release PAT, none of which a fork has, so on a fork it fails on every
+    # push and buries real failures in noise. Forks publish images through
+    # publish-image.yml instead.
+    if: github.repository == 'jeremylvln/Shulker' && github.event_name == 'push'
 
     permissions:
       contents: read
@@ -71,7 +75,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
 
-    if: github.event_name == 'workflow_dispatch'
+    # Upstream only, for the same reason as `preview` above.
+    if: github.repository == 'jeremylvln/Shulker' && github.event_name == 'workflow_dispatch'
 
     permissions:
       contents: write
