@@ -30,6 +30,8 @@ pub struct FleetAutoscalerPolicySpec {
     pub buffer: Option<FleetAutoscalerPolicyBufferSpec>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub webhook: Option<WebhookClientConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counter: Option<FleetAutoscalerPolicyCounterSpec>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default, IntoStaticStr, Display)]
@@ -37,6 +39,30 @@ pub enum FleetAutoscalerPolicy {
     #[default]
     Buffer,
     Webhook,
+    /// Scales on aggregate spare capacity of a named counter across the fleet.
+    ///
+    /// The difference from `Buffer` is granularity. `Buffer` counts whole
+    /// servers, and a server is either Ready or Allocated -- so one player and
+    /// forty players on a 40-slot server look identical to it. `Counter`
+    /// measures actual free slots, so a fleet of half-full servers scales out
+    /// before every one of them is saturated.
+    ///
+    /// Requires Agones' `CountsAndLists` feature gate, and requires the counter
+    /// to be declared in the `GameServer` spec and kept up to date through the
+    /// SDK.
+    Counter,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FleetAutoscalerPolicyCounterSpec {
+    /// Name of the counter to scale on, as declared in the `GameServer` spec.
+    pub key: String,
+    /// Spare capacity to maintain across the fleet. An absolute number of free
+    /// slots, or a percentage of total capacity.
+    pub buffer_size: IntOrString,
+    pub min_capacity: i64,
+    pub max_capacity: i64,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]

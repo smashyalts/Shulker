@@ -23,12 +23,14 @@ use shulker_kube_utils::reconcilers::BuilderReconcilerError;
 use std::sync::LazyLock;
 
 use crate::agent::AgentConfig;
+use crate::constants;
 use crate::reconcilers::agent::AgentSide;
 use crate::reconcilers::agent::get_agent_plugin_url;
 use crate::reconcilers::redis_ref::RedisRef;
 use crate::resources::ResolvedResource;
 use crate::resources::resourceref_resolver::ResourceRefResolver;
 use google_agones_crds::v1::game_server::GameServer;
+use google_agones_crds::v1::game_server::GameServerCounterSpec;
 use google_agones_crds::v1::game_server::GameServerEvictionSpec;
 use google_agones_crds::v1::game_server::GameServerHealthSpec;
 use google_agones_crds::v1::game_server::GameServerSpec;
@@ -169,6 +171,18 @@ impl<'a> GameServerBuilder {
                 failure_threshold: Some(5),
             }),
             template: pod_template_spec,
+            // Declaring the counter here is what makes it addressable: the SDK
+            // can only update counters the GameServer spec knows about, and a
+            // Counter fleet autoscaler measures spare capacity against this
+            // declared capacity. The agent keeps `count` current as players
+            // join and leave.
+            counters: Some(BTreeMap::from([(
+                constants::PLAYERS_COUNTER.to_string(),
+                GameServerCounterSpec {
+                    count: 0,
+                    capacity: minecraft_server.spec.config.max_players as i64,
+                },
+            )])),
         };
 
         Ok(game_server_spec)
@@ -860,6 +874,73 @@ mod tests {
             Some(vec![LocalObjectReference {
                 name: "my_pull_secret".to_string()
             }])
+        );
+    }
+
+    #[tokio::test]
+    async fn get_game_server_spec_declares_the_players_counter() {
+        // G
+        let client = create_client_mock();
+        let resourceref_resolver = ResourceRefResolver::new(client);
+        let context = super::GameServerBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+            owning_fleet: None,
+        };
+
+        // W
+        let spec = super::GameServerBuilder::get_game_server_spec(
+            &resourceref_resolver,
+            &context,
+            &TEST_SERVER,
+        )
+        .await
+        .unwrap();
+
+        // T
+        let counters = spec.counters.as_ref().expect("counters were not declared");
+        let players = counters
+            .get(constants::PLAYERS_COUNTER)
+            .expect("the players counter is missing");
+
+        assert_eq!(players.count, 0);
+        // The autoscaler measures spare capacity against this, so it has to be
+        // the server's real player limit rather than a default.
+        assert_eq!(players.capacity, TEST_SERVER.spec.config.max_players as i64);
+    }
+
+    #[tokio::test]
+    async fn players_counter_capacity_tracks_max_players() {
+        // G
+        let client = create_client_mock();
+        let resourceref_resolver = ResourceRefResolver::new(client);
+        let mut server = TEST_SERVER.clone();
+        server.spec.config.max_players = 137;
+        let context = super::GameServerBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+            owning_fleet: None,
+        };
+
+        // W
+        let spec = super::GameServerBuilder::get_game_server_spec(
+            &resourceref_resolver,
+            &context,
+            &server,
+        )
+        .await
+        .unwrap();
+
+        // T
+        assert_eq!(
+            spec.counters.as_ref().unwrap()[constants::PLAYERS_COUNTER].capacity,
+            137
         );
     }
 

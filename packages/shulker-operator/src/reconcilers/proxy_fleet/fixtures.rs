@@ -106,6 +106,7 @@ pub static TEST_PROXY_FLEET: LazyLock<ProxyFleet> = LazyLock::new(|| ProxyFleet 
                     buffer_size: IntOrString::Int(2),
                 }),
                 webhook: None,
+                counter: None,
             }),
         }),
     },

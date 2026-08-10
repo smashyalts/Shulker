@@ -145,7 +145,10 @@ public final class AgonesSDKImpl implements AgonesSDK {
 
         @Override
         public CompletableFuture<Boolean> notifyPlayerDisconnected(String id) {
-            return wrapGrpcFuture(this.asyncStub.playerConnect(this.createPlayerId(id))).thenApply(com.agones.dev.sdk.alpha.Bool::getBool);
+            // Was calling playerConnect. Every disconnect was recorded as a
+            // connect, so Agones' player count only ever grew and never
+            // reflected a player leaving.
+            return wrapGrpcFuture(this.asyncStub.playerDisconnect(this.createPlayerId(id))).thenApply(com.agones.dev.sdk.alpha.Bool::getBool);
         }
 
         @Override
@@ -173,6 +176,50 @@ public final class AgonesSDKImpl implements AgonesSDK {
         @Override
         public CompletableFuture<List<String>> getConnectedPlayers() {
             return wrapGrpcFuture(this.asyncStub.getConnectedPlayers(EMPTY_PAYLOAD)).thenApply(com.agones.dev.sdk.alpha.PlayerIDList::getListList);
+        }
+
+        @Override
+        public CompletableFuture<Void> setCounter(String name, long count) {
+            return wrapGrpcFuture(
+                this.asyncStub.updateCounter(
+                    com.agones.dev.sdk.alpha.UpdateCounterRequest.newBuilder()
+                        .setCounterUpdateRequest(
+                            com.agones.dev.sdk.alpha.CounterUpdateRequest.newBuilder()
+                                .setName(name)
+                                // Int64Value rather than a bare long: the field
+                                // is optional, and a wrapper distinguishes
+                                // "set the count to 0" from "leave it alone".
+                                .setCount(com.google.protobuf.Int64Value.of(count))
+                                .build()
+                        )
+                        .build()
+                )
+            ).thenAccept((counter) -> {});
+        }
+
+        @Override
+        public CompletableFuture<Long> getCounter(String name) {
+            return wrapGrpcFuture(
+                this.asyncStub.getCounter(
+                    com.agones.dev.sdk.alpha.GetCounterRequest.newBuilder().setName(name).build()
+                )
+            ).thenApply(com.agones.dev.sdk.alpha.Counter::getCount);
+        }
+
+        @Override
+        public CompletableFuture<Void> setCounterCapacity(String name, long capacity) {
+            return wrapGrpcFuture(
+                this.asyncStub.updateCounter(
+                    com.agones.dev.sdk.alpha.UpdateCounterRequest.newBuilder()
+                        .setCounterUpdateRequest(
+                            com.agones.dev.sdk.alpha.CounterUpdateRequest.newBuilder()
+                                .setName(name)
+                                .setCapacity(com.google.protobuf.Int64Value.of(capacity))
+                                .build()
+                        )
+                        .build()
+                )
+            ).thenAccept((counter) -> {});
         }
 
         private com.agones.dev.sdk.alpha.PlayerID createPlayerId(String id) {

@@ -15,3 +15,11 @@ pub const SHULKER_PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Container images moved to `crate::config::Images` so they can be overridden
 // at startup for private registries and air-gapped clusters.
+
+/// Name of the Agones counter the server agent keeps in step with the live
+/// player count.
+///
+/// Declared on every GameServer the operator builds, so a Counter fleet
+/// autoscaler can scale on real free slots rather than on whole servers being
+/// Ready or Allocated.
+pub const PLAYERS_COUNTER: &str = "players";

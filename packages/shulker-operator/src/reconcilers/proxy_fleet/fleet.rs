@@ -170,6 +170,11 @@ impl<'a> FleetBuilder {
                 failure_threshold: Some(5),
             }),
             template: pod_template_spec,
+            // No counter here. Proxies are not allocated per-player the way
+            // servers are -- every player passes through one -- so there is no
+            // capacity for a Counter autoscaler to measure. Proxy fleets scale
+            // on the Buffer policy.
+            counters: None,
         };
 
         Ok(game_server_spec)

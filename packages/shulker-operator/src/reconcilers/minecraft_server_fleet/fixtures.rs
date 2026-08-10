@@ -108,6 +108,7 @@ pub static TEST_SERVER_FLEET: LazyLock<MinecraftServerFleet> =
                         buffer_size: IntOrString::Int(2),
                     }),
                     webhook: None,
+                    counter: None,
                 }),
             }),
         },

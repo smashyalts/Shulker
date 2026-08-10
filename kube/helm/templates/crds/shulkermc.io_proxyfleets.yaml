@@ -50,11 +50,33 @@ spec:
                         - maxReplicas
                         - minReplicas
                         type: object
+                      counter:
+                        nullable: true
+                        properties:
+                          bufferSize:
+                            description: Spare capacity to maintain across the fleet. An absolute number of free slots, or a percentage of total capacity.
+                            x-kubernetes-int-or-string: true
+                          key:
+                            description: Name of the counter to scale on, as declared in the `GameServer` spec.
+                            type: string
+                          maxCapacity:
+                            format: int64
+                            type: integer
+                          minCapacity:
+                            format: int64
+                            type: integer
+                        required:
+                        - bufferSize
+                        - key
+                        - maxCapacity
+                        - minCapacity
+                        type: object
                       type:
                         default: Buffer
                         enum:
                         - Buffer
                         - Webhook
+                        - Counter
                         type: string
                       webhook:
                         description: WebhookClientConfig contains the information to make a TLS connection with the webhook
