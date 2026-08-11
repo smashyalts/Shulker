@@ -152,23 +152,54 @@ class PlayerMovementService(private val agent: ShulkerProxyAgentCommon) {
         }
     }
 
+    /**
+     * Chooses a live server carrying [tag].
+     *
+     * This is both the initial routing decision -- Velocity's `try` list names
+     * the placeholder server `lobby`, which lands here -- and the fallback one
+     * when a backend a player is already on goes away and Velocity walks `try`
+     * again. Both used to take the first entry of the directory's set.
+     *
+     * Taking the first was wrong twice over. It is not a load balancer: the
+     * set is insertion-ordered, so every player on every proxy piled onto
+     * whichever lobby registered earliest while the others sat empty. And on
+     * the fallback path it is actively harmful, because the server a player is
+     * being bounced off is very often still the first one -- the directory
+     * only drops it when the Kubernetes DELETE watch event arrives, which
+     * races the kick. The player is then sent straight back to the server that
+     * just died, that connection fails too, Velocity moves on to `limbo`, and
+     * with no limbo in the cluster they are disconnected.
+     *
+     * Choosing at random fixes the distribution outright and turns the
+     * fallback race from "usually the dead one" into a 1-in-n chance that
+     * disappears the moment the watch event lands.
+     *
+     * Filtering on [hasServer] is the belt to that braces: the directory and
+     * the proxy's own registry are updated together, so an entry the proxy no
+     * longer knows about is one that cannot be connected to anyway.
+     */
+    private fun pickServerByTag(tag: String): String? =
+        this.agent.serverDirectoryService.getServersByTag(tag)
+            .filter { this.agent.proxyInterface.hasServer(it) }
+            .randomOrNull()
+
     private fun onServerPreConnect(
         player: Player,
         originalServerName: String,
     ): ServerPreConnectHookResult {
         if (originalServerName == LOBBY_TAG) {
-            val firstLobbyServer = this.agent.serverDirectoryService.getServersByTag(LOBBY_TAG).firstOrNull()
-            if (firstLobbyServer != null) {
-                return ServerPreConnectHookResult(true, Optional.of(firstLobbyServer))
+            val lobbyServer = this.pickServerByTag(LOBBY_TAG)
+            if (lobbyServer != null) {
+                return ServerPreConnectHookResult(true, Optional.of(lobbyServer))
             }
 
             return this.onServerPreConnect(player, LIMBO_TAG)
         }
 
         if (originalServerName == LIMBO_TAG) {
-            val firstLimboServer = this.agent.serverDirectoryService.getServersByTag(LIMBO_TAG).firstOrNull()
-            if (firstLimboServer != null) {
-                return ServerPreConnectHookResult(true, Optional.of(firstLimboServer))
+            val limboServer = this.pickServerByTag(LIMBO_TAG)
+            if (limboServer != null) {
+                return ServerPreConnectHookResult(true, Optional.of(limboServer))
             }
 
             player.disconnect(MSG_NO_LIMBO_FOUND)
