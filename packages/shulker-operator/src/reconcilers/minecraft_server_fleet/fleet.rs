@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use google_agones_crds::v1::fleet::FleetTemplate;
-use k8s_openapi::api::apps::v1::DeploymentStrategy;
+use k8s_openapi::api::apps::v1::{DeploymentStrategy, RollingUpdateDeployment};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::Api;
 use kube::Client;
@@ -133,10 +133,7 @@ impl<'a> ResourceBuilder<'a> for FleetBuilder {
             },
             spec: FleetSpec {
                 replicas: Some(replicas),
-                strategy: Some(DeploymentStrategy {
-                    type_: Some("Recreate".to_string()),
-                    ..DeploymentStrategy::default()
-                }),
+                strategy: Some(Self::build_strategy(minecraft_server_fleet)),
                 scheduling: Some("Packed".to_string()),
                 template: FleetTemplate {
                     metadata: Some(ObjectMeta {
@@ -151,6 +148,47 @@ impl<'a> ResourceBuilder<'a> for FleetBuilder {
         };
 
         Ok(fleet)
+    }
+}
+
+impl FleetBuilder {
+    /// Map the fleet's strategy onto Agones' `DeploymentStrategy`.
+    ///
+    /// Defaults to `Recreate` when the field is absent, which is exactly what
+    /// this builder did unconditionally before `spec.strategy` existed -- so a
+    /// fleet that does not set it is byte-identical to before.
+    ///
+    /// The numbers are only attached for `RollingUpdate`. Agones rejects a
+    /// `rollingUpdate` block on a `Recreate` strategy, and a zone that had once
+    /// rolled and was then switched back would otherwise carry the leftovers
+    /// into a Fleet the API server refuses.
+    fn build_strategy(
+        minecraft_server_fleet: &MinecraftServerFleet,
+    ) -> DeploymentStrategy {
+        let strategy = match &minecraft_server_fleet.spec.strategy {
+            Some(strategy) => strategy,
+            None => {
+                return DeploymentStrategy {
+                    type_: Some("Recreate".to_string()),
+                    ..DeploymentStrategy::default()
+                };
+            }
+        };
+
+        if strategy.type_ != "RollingUpdate" {
+            return DeploymentStrategy {
+                type_: Some(strategy.type_.clone()),
+                ..DeploymentStrategy::default()
+            };
+        }
+
+        DeploymentStrategy {
+            type_: Some("RollingUpdate".to_string()),
+            rolling_update: Some(RollingUpdateDeployment {
+                max_surge: strategy.max_surge.clone(),
+                max_unavailable: strategy.max_unavailable.clone(),
+            }),
+        }
     }
 }
 
@@ -336,6 +374,54 @@ mod tests {
                 .as_ref()
                 .unwrap(),
             "Recreate"
+        );
+    }
+
+    /// The default is unchanged, and that matters more than the new path: every
+    /// fleet that does not set `strategy` must still come out `Recreate`, or
+    /// this becomes a silent behaviour change for every existing zone.
+    #[tokio::test]
+    async fn build_should_use_rolling_update_when_asked() {
+        // G
+        let client = create_client_mock();
+        let builder = super::FleetBuilder::new(client);
+        let mut fleet_spec = TEST_SERVER_FLEET.clone();
+        fleet_spec.spec.strategy = Some(shulker_crds::schemas::FleetStrategySpec {
+            type_: "RollingUpdate".to_string(),
+            max_surge: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(1)),
+            max_unavailable: Some(
+                k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(0),
+            ),
+        });
+        let name = super::FleetBuilder::name(&fleet_spec);
+        let context = super::FleetBuilderContext {
+            cluster: &TEST_CLUSTER,
+            agent_config: &AgentConfig {
+                maven_repository: constants::SHULKER_PLUGIN_REPOSITORY.to_string(),
+                version: constants::SHULKER_PLUGIN_VERSION.to_string(),
+            },
+        };
+
+        // W
+        let fleet = builder
+            .build(&fleet_spec, &name, None, Some(context))
+            .await
+            .unwrap();
+
+        // T
+        let strategy = fleet.spec.strategy.as_ref().unwrap();
+        assert_eq!(strategy.type_.as_ref().unwrap(), "RollingUpdate");
+
+        let rolling = strategy.rolling_update.as_ref().unwrap();
+        assert_eq!(
+            rolling.max_surge,
+            Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(1))
+        );
+        // The whole point: capacity never dips below the desired count, so
+        // there is always a server to send a player to during a rollout.
+        assert_eq!(
+            rolling.max_unavailable,
+            Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(0))
         );
     }
 }
