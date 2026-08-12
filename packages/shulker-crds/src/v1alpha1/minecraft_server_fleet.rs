@@ -7,7 +7,7 @@ use super::{minecraft_cluster::MinecraftClusterRef, minecraft_server::MinecraftS
 
 use crate::{
     condition::HasConditions,
-    schemas::{FleetAutoscalingSpec, TemplateSpec},
+    schemas::{FleetAutoscalingSpec, FleetStrategySpec, TemplateSpec},
 };
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
@@ -36,6 +36,15 @@ pub struct MinecraftServerFleetSpec {
     /// Autoscaling configuration for this `MinecraftServerFleet`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub autoscaling: Option<FleetAutoscalingSpec>,
+
+    /// How to replace servers when the template changes.
+    ///
+    /// Absent means `Recreate`, which deletes every server at once -- the
+    /// behaviour this operator had unconditionally before the field existed,
+    /// kept as the default so adding it changes nothing for anyone who does
+    /// not set it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<FleetStrategySpec>,
 }
 
 impl MinecraftServerFleetSpec {
