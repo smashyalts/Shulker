@@ -49,6 +49,16 @@ jobs:
       # detekt and the e2e suite, which are currently failing for reasons that
       # have nothing to do with these artifacts.
       - name: Build agent jars
+        env:
+          # Without this the root build appends -SNAPSHOT to every version, and
+          # the jars come out as shulker-server-agent-0.13.0-SNAPSHOT-paper.jar.
+          # The operator asks for the plain version -- it takes it from its own
+          # crate version, which has no suffix in a release build -- so a
+          # SNAPSHOT filename is a 404 at Pod start. It also changes how the
+          # operator resolves the artifact at all: a version ending in -SNAPSHOT
+          # sends it to maven-metadata.xml first, which a plain file server does
+          # not have.
+          IS_RELEASE: "true"
         run: |
           ./gradlew --no-daemon \
             :packages:shulker-server-agent:paperJar \
