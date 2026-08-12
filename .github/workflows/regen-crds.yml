@@ -56,5 +56,7 @@ jobs:
           # inside a `run: |` block ENDS the YAML literal scalar, and the rest
           # is then parsed as top-level keys. GitHub reports that as a workflow
           # whose name is its own file path, with no job and no useful error.
-          git commit -m "chore(crds): regenerate chart manifests from the Rust types (crdgen, via regen-crds.yml)"
+          # Scope must be a package name -- commitlint enforces scope-enum from
+          # commitlint.config.cjs, and the husky commit-msg hook runs here too.
+          git commit -m "chore(shulker-crds): regenerate chart manifests from the Rust types (crdgen, via regen-crds.yml)"
           git push
