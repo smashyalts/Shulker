@@ -141,6 +141,26 @@ spec:
                 format: uint32
                 minimum: 0.0
                 type: integer
+              strategy:
+                description: |-
+                  How to replace servers when the template changes.
+
+                  Absent means `Recreate`, which deletes every server at once -- the behaviour this operator had unconditionally before the field existed, kept as the default so adding it changes nothing for anyone who does not set it.
+                nullable: true
+                properties:
+                  maxSurge:
+                    description: How many servers may exist ABOVE the desired count during a rollout. An absolute number or a percentage string. Ignored for `Recreate`.
+                    nullable: true
+                    x-kubernetes-int-or-string: true
+                  maxUnavailable:
+                    description: How many servers may be missing BELOW the desired count during a rollout. Set this to 0 to guarantee capacity never dips. An absolute number or a percentage string. Ignored for `Recreate`.
+                    nullable: true
+                    x-kubernetes-int-or-string: true
+                  type:
+                    default: Recreate
+                    description: '`RollingUpdate` or `Recreate`. Defaults to `Recreate`, which is what this operator did unconditionally before the field existed.'
+                    type: string
+                type: object
               template:
                 description: Describe how to create the underlying `MinecraftServers`
                 properties:
