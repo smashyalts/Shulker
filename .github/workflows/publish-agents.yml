@@ -1,0 +1,79 @@
+name: publish-agents
+
+# Build the Shulker agent plugin jars from THIS fork and publish them as release
+# assets.
+#
+# Why this exists: the operator injects an agent jar URL into every server and
+# proxy Pod, defaulting to upstream's Maven at maven.jeremylvln.fr. This fork
+# has changed both agents (PlayerMovementService now reports the live player
+# count into the Agones `players` counter), so running upstream's published jar
+# means the operator declares a counter that nothing ever updates -- Counter
+# fleet autoscalers then see zero players forever and never scale on occupancy.
+#
+# Release assets rather than a Maven repository, deliberately. Upstream's
+# `publish` task is hardcoded to maven.jeremylvln.fr and GPG-signs every
+# artifact; retargeting it means editing the root build and holding a signing
+# key. The consumer here is overbound-gitops' jar-store, which mirrors any URL
+# and pins by sha256, so a plain asset download is all that is needed.
+#
+# Manual trigger only. These jars change rarely and a rebuild that produces
+# identical bytes still moves the release, which invalidates the digests pinned
+# downstream.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or replace"
+        required: true
+        default: agents-v0.13.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install tools
+        uses: ./.github/actions/install-tools
+
+      # Only the two shaded provider jars, not `build` -- the full build runs
+      # detekt and the e2e suite, which are currently failing for reasons that
+      # have nothing to do with these artifacts.
+      - name: Build agent jars
+        run: |
+          ./gradlew --no-daemon \
+            :packages:shulker-server-agent:paperJar \
+            :packages:shulker-proxy-agent:velocityJar
+
+      - name: Collect and checksum
+        id: collect
+        run: |
+          mkdir -p dist
+          find packages/shulker-server-agent/build/libs \
+               packages/shulker-proxy-agent/build/libs \
+               -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+               -exec cp {} dist/ \;
+          ls -l dist
+          # The digests are what overbound-gitops pins, so print them where they
+          # are easy to copy out of the run log.
+          (cd dist && sha256sum *.jar | tee SHA256SUMS)
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" dist/*.jar dist/SHA256SUMS \
+            --title "Agent jars $TAG" \
+            --notes "Built from ${{ github.sha }} by publish-agents.yml. Digests in SHA256SUMS."
+          gh release view "$TAG" --json assets --jq '.assets[].url'
