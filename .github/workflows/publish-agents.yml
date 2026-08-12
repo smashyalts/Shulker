@@ -54,18 +54,30 @@ jobs:
             :packages:shulker-server-agent:paperJar \
             :packages:shulker-proxy-agent:velocityJar
 
+      # NOT `dist/` for the output, and NOT `*/build/libs` for the input. This
+      # build redirects layout.buildDirectory to dist/java/packages/<name>, so
+      # the conventional path does not exist and `dist` is the build tree.
       - name: Collect and checksum
         id: collect
         run: |
-          mkdir -p dist
-          find packages/shulker-server-agent/build/libs \
-               packages/shulker-proxy-agent/build/libs \
-               -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
-               -exec cp {} dist/ \;
-          ls -l dist
+          mkdir -p out
+          find . -path '*/libs/*.jar' \
+                 -name 'shulker-*-agent-*.jar' \
+                 ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+                 -exec cp -v {} out/ \;
+          # Fail loudly rather than publishing an empty release: a rename
+          # upstream would otherwise silently produce a release with no jars,
+          # and the digests pinned downstream would keep pointing at the old
+          # ones with nothing to say they had gone.
+          count=$(ls out/*.jar 2>/dev/null | wc -l)
+          if [ "$count" -ne 2 ]; then
+            echo "::error::expected 2 agent jars, found $count"
+            find . -path '*/libs/*.jar' -print
+            exit 1
+          fi
           # The digests are what overbound-gitops pins, so print them where they
           # are easy to copy out of the run log.
-          (cd dist && sha256sum *.jar | tee SHA256SUMS)
+          (cd out && sha256sum *.jar | tee SHA256SUMS)
 
       - name: Publish release
         env:
@@ -73,7 +85,7 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           gh release delete "$TAG" --yes --cleanup-tag || true
-          gh release create "$TAG" dist/*.jar dist/SHA256SUMS \
+          gh release create "$TAG" out/*.jar out/SHA256SUMS \
             --title "Agent jars $TAG" \
             --notes "Built from ${{ github.sha }} by publish-agents.yml. Digests in SHA256SUMS."
           gh release view "$TAG" --json assets --jq '.assets[].url'
