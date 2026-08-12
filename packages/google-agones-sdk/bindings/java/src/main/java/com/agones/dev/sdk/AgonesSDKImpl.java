@@ -33,12 +33,14 @@ public final class AgonesSDKImpl implements AgonesSDK {
     private final StreamObserver<Empty> healthcheckObserver;
 
     private final Alpha alphaSdk;
+    private final Beta betaSdk;
 
     private AgonesSDKImpl(ManagedChannel channel) {
         this.channel = channel;
         this.stub = SDKGrpc.newStub(channel);
         this.asyncStub = SDKGrpc.newFutureStub(channel);
         this.alphaSdk = new AlphaImpl();
+        this.betaSdk = new BetaImpl();
 
         this.healthcheckObserver = this.stub.health(EMPTY_STREAM_OBSERVER);
     }
@@ -116,6 +118,11 @@ public final class AgonesSDKImpl implements AgonesSDK {
         );
 
         return future;
+    }
+
+    @Override
+    public Beta beta() {
+        return this.betaSdk;
     }
 
     @Override
@@ -224,6 +231,63 @@ public final class AgonesSDKImpl implements AgonesSDK {
 
         private com.agones.dev.sdk.alpha.PlayerID createPlayerId(String id) {
             return com.agones.dev.sdk.alpha.PlayerID.newBuilder().setPlayerID(id).build();
+        }
+    }
+
+    /**
+     * Counters against agones.dev.sdk.beta.SDK.
+     * <br>
+     * Byte-for-byte the same request shapes as the alpha implementation above --
+     * Agones moved the RPCs between services without changing them. Only the
+     * generated package differs, and that is the entire fix: the alpha service
+     * on 1.59 no longer serves UpdateCounter.
+     */
+    public final class BetaImpl implements AgonesSDK.Beta {
+        private final com.agones.dev.sdk.beta.SDKGrpc.SDKFutureStub asyncStub =
+            com.agones.dev.sdk.beta.SDKGrpc.newFutureStub(channel);
+
+        @Override
+        public CompletableFuture<Void> setCounter(String name, long count) {
+            return wrapGrpcFuture(
+                this.asyncStub.updateCounter(
+                    com.agones.dev.sdk.beta.UpdateCounterRequest.newBuilder()
+                        .setCounterUpdateRequest(
+                            com.agones.dev.sdk.beta.CounterUpdateRequest.newBuilder()
+                                .setName(name)
+                                // Int64Value rather than a bare long: the field
+                                // is optional, and a wrapper distinguishes
+                                // "set the count to 0" from "leave it alone".
+                                .setCount(com.google.protobuf.Int64Value.of(count))
+                                .build()
+                        )
+                        .build()
+                )
+            ).thenAccept((counter) -> {});
+        }
+
+        @Override
+        public CompletableFuture<Long> getCounter(String name) {
+            return wrapGrpcFuture(
+                this.asyncStub.getCounter(
+                    com.agones.dev.sdk.beta.GetCounterRequest.newBuilder().setName(name).build()
+                )
+            ).thenApply(com.agones.dev.sdk.beta.Counter::getCount);
+        }
+
+        @Override
+        public CompletableFuture<Void> setCounterCapacity(String name, long capacity) {
+            return wrapGrpcFuture(
+                this.asyncStub.updateCounter(
+                    com.agones.dev.sdk.beta.UpdateCounterRequest.newBuilder()
+                        .setCounterUpdateRequest(
+                            com.agones.dev.sdk.beta.CounterUpdateRequest.newBuilder()
+                                .setName(name)
+                                .setCapacity(com.google.protobuf.Int64Value.of(capacity))
+                                .build()
+                        )
+                        .build()
+                )
+            ).thenAccept((counter) -> {});
         }
     }
 }
