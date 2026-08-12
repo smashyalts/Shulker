@@ -60,7 +60,7 @@ class PlayerMovementService(private val agent: ShulkerServerAgentCommon) {
         val liveCount = if (triggerFromJoin) playerCount else playerCount - 1
 
         this.agent.cluster.agonesGateway
-            .alpha()
+            .beta()
             .setCounter(PLAYERS_COUNTER, liveCount.toLong())
             .exceptionally { error ->
                 // Agones rejects counter updates when the CountsAndLists
@@ -68,10 +68,18 @@ class PlayerMovementService(private val agent: ShulkerServerAgentCommon) {
                 // the GameServer. Neither should stop a player joining, so log
                 // once and carry on -- the fleet just falls back to whatever
                 // its Buffer policy does.
+                //
+                // UNIMPLEMENTED means the wrong SERVICE, not a disabled gate.
+                // Counters live on agones.dev.sdk.beta.SDK; they were removed
+                // from alpha in 1.53. The old message blamed the gate and cost
+                // an afternoon, because the gate was on the whole time.
                 this.agent.logger.warning(
                     "Failed to report the player count to Agones: ${error.message}. " +
-                        "Counter-based autoscaling will not work; check that the " +
-                        "CountsAndLists feature gate is enabled.",
+                        "Counter-based autoscaling will not work. If this says " +
+                        "UNIMPLEMENTED, this agent is calling the wrong SDK service " +
+                        "for your Agones version; otherwise check that the " +
+                        "CountsAndLists feature gate is enabled and that the " +
+                        "GameServer declares a counter named '$PLAYERS_COUNTER'.",
                 )
                 null
             }
