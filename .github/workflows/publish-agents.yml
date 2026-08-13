@@ -41,6 +41,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          # UnifiedMetrics is a composite build under third_party/, not a
+          # repository dependency -- without it gradle fails at configuration
+          # with an unresolved dev.cubxity.plugins dependency.
+          submodules: recursive
 
       - name: Install tools
         uses: ./.github/actions/install-tools
