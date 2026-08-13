@@ -55,6 +55,17 @@ subprojects {
         // favour of the Central Portal.
         maven(url = "https://central.sonatype.com/repository/maven-snapshots/")
         maven(url = "https://repo.papermc.io/repository/maven-public/")
+        // UnifiedMetrics, embedded in the agents, is built from the fork in
+        // third_party/unifiedmetrics and published here first -- see
+        // docs/METRICS.md and the publish-agents workflow.
+        //
+        // NOT includeBuild, which is the obvious answer and was the first one
+        // tried: an included build is a separate Gradle build, and @nx/gradle
+        // walks for build files and asks Gradle about everything it finds, so
+        // the composite made the Nx project graph unresolvable. That surfaced
+        // as `pnpm install` failing in its prepare script, which says nothing
+        // about Gradle at all.
+        mavenLocal()
     }
 
     tasks {

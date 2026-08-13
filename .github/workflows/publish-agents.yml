@@ -52,6 +52,17 @@ jobs:
       # Only the two shaded provider jars, not `build` -- the full build runs
       # detekt and the e2e suite, which are currently failing for reasons that
       # have nothing to do with these artifacts.
+      # UnifiedMetrics is vendored as a submodule and consumed from the local
+      # Maven repository rather than a public one -- the fork exists to make its
+      # Bukkit bootstrap embeddable, and publishing that fork anywhere public
+      # would be a release process for a one-word patch.
+      - name: Publish UnifiedMetrics to the local repository
+        run: |
+          cd third_party/unifiedmetrics
+          ./gradlew --no-daemon \
+            :unifiedmetrics-platform-bukkit:publishToMavenLocal \
+            :unifiedmetrics-platform-velocity:publishToMavenLocal
+
       - name: Build agent jars
         env:
           # Without this the root build appends -SNAPSHOT to every version, and
