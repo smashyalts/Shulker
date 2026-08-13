@@ -55,6 +55,10 @@ subprojects {
         // favour of the Central Portal.
         maven(url = "https://central.sonatype.com/repository/maven-snapshots/")
         maven(url = "https://repo.papermc.io/repository/maven-public/")
+        // Our UnifiedMetrics fork, for the embedded metrics endpoint. JitPack
+        // builds it straight from the branch, so there is no separate publish
+        // step to keep in sync with this repository.
+        maven(url = "https://jitpack.io")
     }
 
     tasks {

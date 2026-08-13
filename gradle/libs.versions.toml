@@ -39,6 +39,16 @@ protobuf = { module = "com.google.protobuf:protobuf-java", version = "4.35.1" }
 snakeyaml = { module = "org.yaml:snakeyaml", version = "2.6" }
 velocity-api = { module = "com.velocitypowered:velocity-api", version = "3.4.0" }
 
+# Our fork of UnifiedMetrics, embedded into the agents rather than shipped as a
+# second plugin jar. Pinned to a COMMIT, not a branch: JitPack caches per ref,
+# and a moving ref would change the jar without changing any digest in gitops.
+#
+# The Bukkit platform needs the fork -- upstream's bootstrap is final and every
+# collector binds to the concrete type. Velocity would work against upstream,
+# but both come from one build so the two cannot drift apart.
+unifiedmetrics-bukkit = { module = "com.github.smashyalts.UnifiedMetrics:unifiedmetrics-platform-bukkit", version = "2d3abdf" }
+unifiedmetrics-velocity = { module = "com.github.smashyalts.UnifiedMetrics:unifiedmetrics-platform-velocity", version = "2d3abdf" }
+
 [plugins]
 buildconfig = { id = "com.github.gmazzo.buildconfig", version = "5.7.1" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version = "1.23.8" }

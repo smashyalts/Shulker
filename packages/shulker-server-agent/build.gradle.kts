@@ -6,6 +6,11 @@ dependencies {
 
     // Agones
     commonImplementation(project(":packages:google-agones-sdk"))
+
+    // UnifiedMetrics, embedded rather than shipped as a second plugin. `api`
+    // rather than `implementation` because ShulkerServerAgentPaper extends its
+    // bootstrap class, so the type is part of this module's public surface.
+    paperApi(libs.unifiedmetrics.bukkit)
 }
 
 setOf("processPaperResources").forEach { taskName ->
