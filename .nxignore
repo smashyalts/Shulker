@@ -1,0 +1,9 @@
+# third_party holds vendored builds consumed through Gradle's includeBuild, not
+# projects of this monorepo.
+#
+# @nx/gradle discovers projects by walking for build files and asking Gradle
+# about them. An included build is a SEPARATE Gradle build with its own settings
+# and its own plugin versions, so that walk finds projects Nx cannot resolve and
+# the whole graph fails to process -- which surfaces as `pnpm install` failing
+# in its prepare script, several steps away from anything to do with Gradle.
+third_party
