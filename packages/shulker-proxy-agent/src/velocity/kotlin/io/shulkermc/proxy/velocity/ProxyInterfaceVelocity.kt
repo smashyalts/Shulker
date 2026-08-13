@@ -188,6 +188,23 @@ class ProxyInterfaceVelocity(
         return this.proxy.playerCount
     }
 
+    override fun getServerPlayerCount(serverName: String): Int {
+        // getServer returns empty for a name this proxy has not registered,
+        // which happens routinely between a backend going away and the watch
+        // event landing. 0 is the right answer there: it sorts the unknown
+        // server last rather than making it look attractive to pack into.
+        return this.proxy.getServer(serverName)
+            .map { it.playersConnected.size }
+            .orElse(0)
+    }
+
+    override fun getPlayerServerName(playerId: UUID): String? {
+        return this.proxy.getPlayer(playerId)
+            .flatMap { it.currentServer }
+            .map { it.serverInfo.name }
+            .orElse(null)
+    }
+
     override fun getPlayerCapacity(): Int {
         return this.proxy.configuration.showMaxPlayers
     }

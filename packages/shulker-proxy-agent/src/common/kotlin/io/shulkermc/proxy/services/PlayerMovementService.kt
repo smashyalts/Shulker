@@ -24,6 +24,21 @@ class PlayerMovementService(private val agent: ShulkerProxyAgentCommon) {
         private const val ONLINE_PLAYERS_COUNT_MEMOIZE_SECONDS = 10L
         private const val PLAYER_CAPACITY_COUNT_MEMOIZE_SECONDS = 60L
 
+        /**
+         * How many players one lobby is filled to before the next is used.
+         *
+         * SET THIS BELOW THE BACKEND'S max-players. The proxy cannot see what a
+         * backend will accept, so this is configuration rather than discovery;
+         * set too high, players are routed at a server that refuses them and
+         * the connection fails for a reason nothing here can explain.
+         *
+         * 0 disables packing and restores the previous random routing. That is
+         * the setting to reach for if this ever misbehaves -- it needs no
+         * rebuild, only a restart.
+         */
+        private val PACK_LIMIT: Int =
+            System.getenv("SHULKER_LOBBY_PACK_LIMIT")?.toIntOrNull() ?: 0
+
         private val MSG_NOT_ACCEPTING_PLAYERS =
             createDisconnectMessage(
                 "Proxy is not accepting players, try reconnect.",
@@ -178,17 +193,83 @@ class PlayerMovementService(private val agent: ShulkerProxyAgentCommon) {
      * the proxy's own registry are updated together, so an entry the proxy no
      * longer knows about is one that cannot be connected to anyway.
      */
-    private fun pickServerByTag(tag: String): String? =
-        this.agent.serverDirectoryService.getServersByTag(tag)
-            .filter { this.agent.proxyInterface.hasServer(it) }
-            .randomOrNull()
+    /**
+     * PACKING, and why it is not simply "pick the fullest".
+     *
+     * Random spreads players evenly, which is correct for load and wrong for a
+     * lobby: four hubs with five people each feel dead, while one hub with
+     * twenty feels like a server. So the default is now to fill a lobby before
+     * opening the next one.
+     *
+     * TWO THINGS MAKE THAT SAFE, and without them packing reintroduces the bug
+     * random was chosen to fix.
+     *
+     * [exclude] is the server the player is being bounced OFF. On the fallback
+     * path the dying backend is very often the FULLEST -- its players have not
+     * been dropped yet -- so a naive "most players" would send them straight
+     * back to it, the connection would fail, Velocity would walk on to `limbo`,
+     * and with no limbo they are disconnected. That is exactly the failure the
+     * old "take the first" had.
+     *
+     * [packLimit] stops a lobby being filled past what the backend will accept.
+     * The proxy cannot see a backend's max-players, so the cap is configured
+     * rather than discovered; above it the next server is used. Zero disables
+     * packing and restores the random behaviour, which is the setting to reach
+     * for if this ever misbehaves.
+     *
+     * The count is this proxy's own view. With several proxies each packs its
+     * own players, so the distribution is per-proxy rather than global -- still
+     * far denser than random, and it needs no cross-proxy coordination to be
+     * correct.
+     */
+    private fun pickServerByTag(
+        tag: String,
+        exclude: String? = null,
+    ): String? {
+        val candidates =
+            this.agent.serverDirectoryService.getServersByTag(tag)
+                .filter { this.agent.proxyInterface.hasServer(it) }
+                .filter { it != exclude }
+
+        if (candidates.isEmpty()) {
+            // Everything is excluded, so the server being left is the only one
+            // there is. Better to try it than to drop the player.
+            return this.agent.serverDirectoryService.getServersByTag(tag)
+                .filter { this.agent.proxyInterface.hasServer(it) }
+                .randomOrNull()
+        }
+
+        if (PACK_LIMIT <= 0) {
+            return candidates.randomOrNull()
+        }
+
+        // Fullest first, but only among those with room. Ties break randomly so
+        // two simultaneous joins do not deterministically land together on a
+        // server that has exactly one slot left.
+        val withRoom =
+            candidates
+                .map { it to this.agent.proxyInterface.getServerPlayerCount(it) }
+                .filter { (_, count) -> count < PACK_LIMIT }
+
+        if (withRoom.isEmpty()) {
+            // Every lobby is at the cap. The autoscaler will add one shortly;
+            // until then spreading is better than refusing.
+            return candidates.randomOrNull()
+        }
+
+        val fullest = withRoom.maxOf { (_, count) -> count }
+        return withRoom.filter { (_, count) -> count == fullest }.random().first
+    }
 
     private fun onServerPreConnect(
         player: Player,
         originalServerName: String,
     ): ServerPreConnectHookResult {
         if (originalServerName == LOBBY_TAG) {
-            val lobbyServer = this.pickServerByTag(LOBBY_TAG)
+            // Exclude whatever they are on: on the fallback path that is the
+            // backend that just died, and it is often still the fullest.
+            val leaving = this.agent.proxyInterface.getPlayerServerName(player.uniqueId)
+            val lobbyServer = this.pickServerByTag(LOBBY_TAG, leaving)
             if (lobbyServer != null) {
                 return ServerPreConnectHookResult(true, Optional.of(lobbyServer))
             }

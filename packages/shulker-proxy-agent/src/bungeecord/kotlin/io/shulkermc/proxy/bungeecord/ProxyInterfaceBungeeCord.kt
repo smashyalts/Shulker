@@ -215,6 +215,17 @@ class ProxyInterfaceBungeeCord(
         return this.proxy.players.size
     }
 
+    override fun getServerPlayerCount(serverName: String): Int {
+        // Null for a server this proxy has not registered, which happens
+        // between a backend going away and the watch event landing. 0 sorts it
+        // last rather than making it look attractive to pack into.
+        return this.proxy.getServerInfo(serverName)?.players?.size ?: 0
+    }
+
+    override fun getPlayerServerName(playerId: UUID): String? {
+        return this.proxy.getPlayer(playerId)?.server?.info?.name
+    }
+
     override fun getPlayerCapacity(): Int {
         return this.proxy.config.playerLimit
     }

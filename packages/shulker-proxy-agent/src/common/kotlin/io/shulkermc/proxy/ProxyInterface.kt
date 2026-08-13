@@ -61,6 +61,30 @@ interface ProxyInterface {
 
     fun getPlayerCount(): Int
 
+    /**
+     * How many players this proxy currently has on [serverName].
+     *
+     * Needed to fill one lobby before spreading into the next. A proxy only
+     * knows about its OWN players, so with several proxies this is a partial
+     * view of a backend's occupancy -- good enough to pack, and deliberately
+     * not treated as authoritative anywhere.
+     *
+     * Returns 0 for a server this proxy does not know, which is the same answer
+     * as an empty one and is the safe direction: an unknown server sorts last
+     * and is chosen only when nothing else is available.
+     */
+    fun getServerPlayerCount(serverName: String): Int
+
+    /**
+     * The server this player is currently on, if any.
+     *
+     * Used to EXCLUDE it when choosing a fallback. On that path the backend a
+     * player is being bounced off is often still the fullest -- its players
+     * have not been dropped yet -- so without this, packing would send them
+     * straight back to the server that just died.
+     */
+    fun getPlayerServerName(playerId: UUID): String?
+
     fun getPlayerCapacity(): Int
 
     fun transferPlayerToAddress(
