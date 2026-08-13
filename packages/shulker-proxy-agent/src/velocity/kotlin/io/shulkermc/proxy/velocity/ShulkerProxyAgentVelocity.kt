@@ -5,6 +5,7 @@ import com.velocitypowered.api.event.Subscribe
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent
 import com.velocitypowered.api.plugin.Plugin
+import com.velocitypowered.api.plugin.PluginDescription
 import com.velocitypowered.api.plugin.annotation.DataDirectory
 import com.velocitypowered.api.proxy.ProxyServer
 import dev.cubxity.plugins.metrics.velocity.bootstrap.UnifiedMetricsVelocityBootstrap
@@ -30,6 +31,13 @@ class ShulkerProxyAgentVelocity
         logger: Logger,
         @DataDirectory dataDirectory: Path,
         slf4jLogger: org.slf4j.Logger,
+        // INJECTED, not looked up. UnifiedMetrics reads a version off this, and
+        // the obvious way to get one -- pluginManager.getPlugin(id) -- returns
+        // empty here: this constructor runs DURING plugin loading, before this
+        // plugin is registered, so the lookup threw NoSuchElementException and
+        // Velocity refused to create the plugin at all. Velocity injects
+        // PluginDescription directly and that is available immediately.
+        pluginDescription: PluginDescription,
     ) {
         val agent = ShulkerProxyAgentCommon(ProxyInterfaceVelocity(this, proxy), logger)
 
@@ -42,20 +50,8 @@ class ShulkerProxyAgentVelocity
         // ordinary class with a public constructor whose lifecycle methods are
         // public, so it can simply be built here and handed the events this class
         // already receives. That is why Velocity needs no fork and Bukkit did.
-        // PluginDescription is UnifiedMetrics' own, looked up by its plugin id --
-        // it reads a version off it. The id is present because the shaded jar
-        // still carries UnifiedMetrics' velocity-plugin.json, and this falls back
-        // to Shulker's own description when it is not, so a change in how the jar
-        // is assembled degrades a version string rather than failing startup.
         private val metrics =
-            UnifiedMetricsVelocityBootstrap(
-                dataDirectory,
-                proxy,
-                slf4jLogger,
-                proxy.pluginManager.getPlugin("unifiedmetrics")
-                    .orElseGet { proxy.pluginManager.getPlugin("shulker-proxy-agent").get() }
-                    .description,
-            )
+            UnifiedMetricsVelocityBootstrap(dataDirectory, proxy, slf4jLogger, pluginDescription)
 
         @Subscribe
         fun onProxyInitialization(
