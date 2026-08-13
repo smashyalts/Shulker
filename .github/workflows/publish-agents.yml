@@ -59,9 +59,11 @@ jobs:
       - name: Publish UnifiedMetrics to the local repository
         run: |
           cd third_party/unifiedmetrics
-          ./gradlew --no-daemon \
-            :unifiedmetrics-platform-bukkit:publishToMavenLocal \
-            :unifiedmetrics-platform-velocity:publishToMavenLocal
+          # EVERY module, not just the two platforms. Publishing only those two
+          # succeeds and still leaves the build unresolvable: their POMs depend
+          # on unifiedmetrics-core and -api, which are then in no repository the
+          # agent build can see.
+          ./gradlew --no-daemon publishToMavenLocal
 
       - name: Build agent jars
         env:
