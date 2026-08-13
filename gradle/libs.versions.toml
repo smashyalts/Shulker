@@ -46,8 +46,8 @@ velocity-api = { module = "com.velocitypowered:velocity-api", version = "3.4.0" 
 # The Bukkit platform needs the fork -- upstream's bootstrap is final and every
 # collector binds to the concrete type. Velocity would work against upstream,
 # but both come from one build so the two cannot drift apart.
-unifiedmetrics-bukkit = { module = "com.github.smashyalts.UnifiedMetrics:unifiedmetrics-platform-bukkit", version = "2d3abdf" }
-unifiedmetrics-velocity = { module = "com.github.smashyalts.UnifiedMetrics:unifiedmetrics-platform-velocity", version = "2d3abdf" }
+unifiedmetrics-bukkit = { module = "dev.cubxity.plugins:unifiedmetrics-platform-bukkit", version = "0.3.10-SNAPSHOT" }
+unifiedmetrics-velocity = { module = "dev.cubxity.plugins:unifiedmetrics-platform-velocity", version = "0.3.10-SNAPSHOT" }
 
 [plugins]
 buildconfig = { id = "com.github.gmazzo.buildconfig", version = "5.7.1" }

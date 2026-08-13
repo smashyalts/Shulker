@@ -11,6 +11,11 @@ dependencies {
     commonImplementation(libs.apache.commons.io)
     commonImplementation(libs.snakeyaml)
     commonImplementation(libs.guava)
+
+    // UnifiedMetrics, embedded rather than shipped as a second plugin. Only
+    // `implementation` here, unlike the Paper agent: Velocity composes the
+    // bootstrap rather than extending it, so the type never leaves this module.
+    velocityImplementation(libs.unifiedmetrics.velocity)
 }
 
 tasks.named("processBungeecordResources", ProcessResources::class.java) {
