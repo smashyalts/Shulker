@@ -9,6 +9,7 @@ import io.shulkermc.proxy.platform.PlayerPreLoginHook
 import io.shulkermc.proxy.platform.ProxyPingHook
 import io.shulkermc.proxy.platform.ServerPostConnectHook
 import io.shulkermc.proxy.platform.ServerPreConnectHook
+import io.shulkermc.proxy.utils.cleanVirtualHost
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.serializer.bungeecord.BungeeComponentSerializer
 import net.md_5.bungee.api.ProxyServer
@@ -254,6 +255,11 @@ class ProxyInterfaceBungeeCord(
 
             override val name: String
                 get() = bungeePlayer.name
+
+            // Null when the client dialled an IP directly rather than a name,
+            // which is a legitimate answer and not a failure.
+            override val virtualHost: String?
+                get() = cleanVirtualHost(bungeePlayer.pendingConnection?.virtualHost?.hostString)
 
             override fun disconnect(component: Component) {
                 bungeePlayer.disconnect(*BungeeComponentSerializer.get().serialize(component))

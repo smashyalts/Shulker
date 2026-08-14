@@ -192,8 +192,7 @@ class PlayerMovementService(private val agent: ShulkerProxyAgentCommon) {
      * Filtering on [hasServer] is the belt to that braces: the directory and
      * the proxy's own registry are updated together, so an entry the proxy no
      * longer knows about is one that cannot be connected to anyway.
-     */
-    /**
+     *
      * PACKING, and why it is not simply "pick the fullest".
      *
      * Random spreads players evenly, which is correct for load and wrong for a

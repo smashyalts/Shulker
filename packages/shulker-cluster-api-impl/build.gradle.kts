@@ -10,5 +10,10 @@ dependencies {
     implementation(libs.kubernetes.client.http)
 
     // Cache & PubSub
-    implementation(libs.jedis)
+    // `api`, not `implementation`: ShulkerClusterAPIImpl exposes `jedisPool` as
+    // a public JedisPool, so Jedis is part of this module's ABI whether or not
+    // it is declared as such. Under `implementation` a consumer could name the
+    // field but not the type -- which is exactly what the proxy agent hit when
+    // it started reading Redis directly for player analytics.
+    api(libs.jedis)
 }

@@ -21,6 +21,7 @@ import io.shulkermc.proxy.platform.PlayerPreLoginHook
 import io.shulkermc.proxy.platform.ProxyPingHook
 import io.shulkermc.proxy.platform.ServerPostConnectHook
 import io.shulkermc.proxy.platform.ServerPreConnectHook
+import io.shulkermc.proxy.utils.cleanVirtualHost
 import net.kyori.adventure.text.Component
 import java.net.InetSocketAddress
 import java.util.UUID
@@ -244,6 +245,14 @@ class ProxyInterfaceVelocity(
 
             override val name: String
                 get() = velocityPlayer.username
+
+            // Empty when the client dialled an IP directly rather than a name,
+            // which is a legitimate answer and not a failure.
+            override val virtualHost: String?
+                get() =
+                    cleanVirtualHost(
+                        velocityPlayer.virtualHost.map { it.hostString }.orElse(null),
+                    )
 
             override fun disconnect(component: Component) {
                 velocityPlayer.disconnect(component)

@@ -48,6 +48,10 @@ velocity-api = { module = "com.velocitypowered:velocity-api", version = "3.4.0" 
 # but both come from one build so the two cannot drift apart.
 unifiedmetrics-bukkit = { module = "dev.cubxity.plugins:unifiedmetrics-platform-bukkit", version = "0.3.10-SNAPSHOT" }
 unifiedmetrics-velocity = { module = "dev.cubxity.plugins:unifiedmetrics-platform-velocity", version = "0.3.10-SNAPSHOT" }
+# The API alone -- collectors and metric types, no platform. Wanted by the
+# agents' COMMON source sets, which register their own collections and must not
+# drag a platform in: common is compiled once for both Velocity and BungeeCord.
+unifiedmetrics-api = { module = "dev.cubxity.plugins:unifiedmetrics-api", version = "0.3.10-SNAPSHOT" }
 
 [plugins]
 buildconfig = { id = "com.github.gmazzo.buildconfig", version = "5.7.1" }

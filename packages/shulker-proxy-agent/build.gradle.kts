@@ -16,6 +16,15 @@ dependencies {
     // `implementation` here, unlike the Paper agent: Velocity composes the
     // bootstrap rather than extending it, so the type never leaves this module.
     velocityImplementation(libs.unifiedmetrics.velocity)
+
+    // The API in `common` so PlayerAnalyticsService can register its own
+    // collection. Deliberately the API and not a platform: common compiles once
+    // for BOTH Velocity and BungeeCord, and a platform dependency here would
+    // put Velocity's bootstrap on BungeeCord's classpath.
+    //
+    // BungeeCord has no UnifiedMetrics at runtime, so the registration is
+    // wrapped in catch(Throwable) there and the service degrades to Redis-only.
+    commonImplementation(libs.unifiedmetrics.api)
 }
 
 tasks.named("processBungeecordResources", ProcessResources::class.java) {

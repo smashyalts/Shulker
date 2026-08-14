@@ -27,6 +27,33 @@ object Configuration {
             }
             .orElse(emptyList())
 
+    /**
+     * The hostnames allowed to appear as a metric label.
+     *
+     * AN ALLOW-LIST, NOT A HINT. The hostname a player connected with comes
+     * from their handshake packet and is not validated by anything, so it is
+     * exactly the kind of value that must never become a Prometheus label
+     * unfiltered -- one bot varying it per connection would mint series
+     * without bound. Anything not named here is reported as "other".
+     *
+     * Empty (the default) means every connection reports "other", which is
+     * useless but safe, and is the right way round for a value nobody has
+     * configured yet.
+     *
+     * Set it to the names players actually type, comma separated:
+     *
+     *     SHULKER_ANALYTICS_HOSTNAMES=play.overbound.gg,mc.overbound.gg
+     */
+    val ANALYTICS_HOSTNAMES: List<String> =
+        getOptionalStringEnv("SHULKER_ANALYTICS_HOSTNAMES")
+            .map {
+                it.split(",")
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .map(String::lowercase)
+            }
+            .orElse(emptyList())
+
     private fun getStringEnv(name: String): String = requireNotNull(System.getenv(name)) { "Missing $name" }
 
     private fun getOptionalStringEnv(name: String): Optional<String> = Optional.ofNullable(System.getenv(name))

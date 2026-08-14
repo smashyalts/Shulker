@@ -7,6 +7,7 @@ import io.shulkermc.proxy.api.ShulkerProxyAPIImpl
 import io.shulkermc.proxy.handlers.DrainProxyHandler
 import io.shulkermc.proxy.handlers.ReconnectPlayerOnProxyHandler
 import io.shulkermc.proxy.handlers.TeleportPlayerOnServerHandler
+import io.shulkermc.proxy.services.PlayerAnalyticsService
 import io.shulkermc.proxy.services.PlayerMovementService
 import io.shulkermc.proxy.services.ProxyLifecycleService
 import io.shulkermc.proxy.services.ServerDirectoryService
@@ -26,6 +27,7 @@ class ShulkerProxyAgentCommon(val proxyInterface: ProxyInterface, val logger: Lo
     // Services
     lateinit var serverDirectoryService: ServerDirectoryService
     lateinit var playerMovementService: PlayerMovementService
+    lateinit var playerAnalyticsService: PlayerAnalyticsService
     lateinit var proxyLifecycleService: ProxyLifecycleService
 
     // Tasks
@@ -42,6 +44,11 @@ class ShulkerProxyAgentCommon(val proxyInterface: ProxyInterface, val logger: Lo
             this.serverDirectoryService = ServerDirectoryService(this)
             this.playerMovementService = PlayerMovementService(this)
             this.proxyLifecycleService = ProxyLifecycleService(this)
+
+            // After the movement service, so its login hook runs first: routing
+            // a player is the job, and measuring it is not allowed to delay it.
+            // Its own hooks are registered at MONITOR order for the same reason.
+            this.playerAnalyticsService = PlayerAnalyticsService(this)
 
             this.cluster.pubSub.onTeleportPlayerOnServer(TeleportPlayerOnServerHandler(this)::handle)
             this.cluster.pubSub.onDrainProxy(DrainProxyHandler(this)::handle)
@@ -87,6 +94,10 @@ class ShulkerProxyAgentCommon(val proxyInterface: ProxyInterface, val logger: Lo
         try {
             if (this::healthcheckTask.isInitialized) {
                 this.healthcheckTask.cancel()
+            }
+
+            if (this::playerAnalyticsService.isInitialized) {
+                this.playerAnalyticsService.destroy()
             }
 
             if (this::proxyLifecycleService.isInitialized) {
