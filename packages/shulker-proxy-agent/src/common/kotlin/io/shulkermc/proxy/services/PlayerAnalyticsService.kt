@@ -55,9 +55,19 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
 
     private var rollupTask: io.shulkermc.proxy.ProxyInterface.ScheduledTask? = null
 
+    @Volatile private var peakJava = 0L
+
+    @Volatile private var peakBedrock = 0L
+
+    // The UTC day the peaks above belong to, so the rollup can tell that the
+    // day has rolled over and start the next one from zero rather than
+    // carrying yesterday's high water mark forever.
+    @Volatile private var peakDay = ""
+
     private data class Session(
         val startedAtMillis: Long,
         val platform: String,
+        val channel: String,
     )
 
     init {
@@ -65,11 +75,22 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
             val platform = platformOf(player.uniqueId)
             val hostname = normaliseHostname(player.virtualHost)
 
-            this.sessions[player.uniqueId] = Session(System.currentTimeMillis(), platform)
-            this.metrics?.recordLogin(platform, hostname)
-            this.refreshOnlineGauge()
+            // The Redis write comes first because it is what decides whether
+            // this player is new, and which channel owns them. Both are needed
+            // to label the metrics below, so there is nothing to be gained by
+            // reordering -- and a failure here degrades to "returning player on
+            // the hostname they used", which is the safe reading.
+            var channel = hostname
+            var returning = true
+            this.safely("login") {
+                val attribution = recordLoginInRedis(player.uniqueId, platform, hostname)
+                channel = attribution.channel
+                returning = !attribution.isNew
+            }
 
-            this.safely("login") { recordLoginInRedis(player.uniqueId, platform) }
+            this.sessions[player.uniqueId] = Session(System.currentTimeMillis(), platform, channel)
+            this.metrics?.recordLogin(platform, hostname, returning)
+            this.refreshOnlineGauge()
         }, HookPostOrder.MONITOR)
 
         this.agent.proxyInterface.addPlayerDisconnectHook({ player ->
@@ -79,6 +100,9 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
             if (session != null) {
                 val seconds = (System.currentTimeMillis() - session.startedAtMillis) / MILLIS_PER_SECOND
                 this.metrics?.recordLogout(session.platform, seconds)
+                if (seconds < BOUNCE_THRESHOLD_SECONDS) {
+                    this.metrics?.recordBounce(session.platform, session.channel)
+                }
                 this.safely("logout") { recordPlaytimeInRedis(player.uniqueId, seconds.toLong()) }
             }
         }, HookPostOrder.MONITOR)
@@ -143,12 +167,38 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
         this.sessions.values.forEach { if (it.platform == PLATFORM_BEDROCK) bedrock++ else java++ }
         metrics.setOnline(PLATFORM_JAVA, java)
         metrics.setOnline(PLATFORM_BEDROCK, bedrock)
+
+        // Peak is tracked here rather than sampled by Prometheus, because a
+        // scrape every 30s misses the spike between scrapes -- and a peak that
+        // a listing site ranks you on is exactly the value that happens
+        // briefly. Reset by the rollup when the UTC day rolls over.
+        this.peakJava = maxOf(this.peakJava, java)
+        this.peakBedrock = maxOf(this.peakBedrock, bedrock)
+        metrics.setPeakConcurrent(PLATFORM_JAVA, this.peakJava)
+        metrics.setPeakConcurrent(PLATFORM_BEDROCK, this.peakBedrock)
     }
 
+    private data class Attribution(val channel: String, val isNew: Boolean)
+
+    /**
+     * Record the login and return who acquired this player.
+     *
+     * FIRST-TOUCH ATTRIBUTION, and it is deliberate. The channel is written
+     * exactly once -- on the player's very first login, ever -- and never
+     * updated. So a player recruited by a YouTube video stays credited to that
+     * video even when they later type the bare domain from memory, which is
+     * what everyone does by their third session.
+     *
+     * Last-touch would credit whichever hostname they most recently used, and
+     * would therefore report that the main domain acquires everybody and that
+     * advertising acquires nobody -- a conclusion that is both wrong and very
+     * easy to believe, because it is what the numbers plainly say.
+     */
     private fun recordLoginInRedis(
         playerId: UUID,
         platform: String,
-    ) {
+        hostname: String,
+    ): Attribution {
         val today = today()
         val id = playerId.toString()
 
@@ -158,15 +208,32 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
             // read-then-write would double-count a player whose client opens
             // two connections at once, which happens on every transfer.
             val isNew = jedis.setnx("$KEY_FIRST_SEEN$id", nowSeconds().toString()) == 1L
+
+            val channel: String
             if (isNew) {
+                channel = hostname
                 jedis.expire("$KEY_FIRST_SEEN$id", IDENTITY_TTL_SECONDS)
+                jedis.setex("$KEY_CHANNEL$id", IDENTITY_TTL_SECONDS, hostname)
+
                 jedis.sadd("$KEY_COHORT$today", id)
                 jedis.expire("$KEY_COHORT$today", WINDOW_TTL_SECONDS)
-                this.metrics?.recordNewPlayer(platform)
+                jedis.sadd("$KEY_COHORT$today:$hostname", id)
+                jedis.expire("$KEY_COHORT$today:$hostname", WINDOW_TTL_SECONDS)
+
+                this.metrics?.recordNewPlayer(platform, hostname)
+            } else {
+                // A player whose channel key has aged out is not "unknown
+                // channel" -- they are simply older than the retention window,
+                // and lumping them into a named channel would inflate it.
+                channel = jedis.get("$KEY_CHANNEL$id") ?: CHANNEL_UNATTRIBUTED
             }
 
             jedis.sadd("$KEY_ACTIVE$today", id)
             jedis.expire("$KEY_ACTIVE$today", WINDOW_TTL_SECONDS)
+            jedis.sadd("$KEY_ACTIVE$today:$channel", id)
+            jedis.expire("$KEY_ACTIVE$today:$channel", WINDOW_TTL_SECONDS)
+
+            return Attribution(channel, isNew)
         }
     }
 
@@ -200,32 +267,62 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
         val today = today()
         val scratch = "$KEY_SCRATCH${this.agent.cluster.selfReference.name}"
 
+        if (this.peakDay != today) {
+            this.peakDay = today
+            this.peakJava = 0
+            this.peakBedrock = 0
+        }
+
+        // Every configured channel, plus the two synthetic ones every player
+        // falls into, plus CHANNEL_ALL for the network-wide figure. Bounded by
+        // configuration, which is what keeps the series count bounded too.
+        val synthetic = listOf(CHANNEL_ALL, HOSTNAME_DIRECT, HOSTNAME_OTHER, CHANNEL_UNATTRIBUTED)
+        val channels = synthetic + this.hostnameAllowList
+
         this.agent.cluster.jedisPool.resource.use { jedis ->
-            metrics.setUnique(WINDOW_DAY, jedis.scard("$KEY_ACTIVE$today"))
+            var dau = 0L
+            var mau = 0L
 
-            listOf(WINDOW_WEEK to DAYS_IN_WEEK, WINDOW_MONTH to DAYS_IN_MONTH).forEach { (window, days) ->
-                val keys = (0 until days).map { "$KEY_ACTIVE${dayOffset(-it)}" }.toTypedArray()
-                jedis.sunionstore(scratch, *keys)
-                metrics.setUnique(window, jedis.scard(scratch))
-                jedis.del(scratch)
+            channels.forEach { channel ->
+                val suffix = if (channel == CHANNEL_ALL) "" else ":$channel"
+
+                val daily = jedis.scard("$KEY_ACTIVE$today$suffix")
+                metrics.setUnique(WINDOW_DAY, channel, daily)
+
+                listOf(WINDOW_WEEK to DAYS_IN_WEEK, WINDOW_MONTH to DAYS_IN_MONTH).forEach { (window, days) ->
+                    val keys = (0 until days).map { "$KEY_ACTIVE${dayOffset(-it)}$suffix" }.toTypedArray()
+                    jedis.sunionstore(scratch, *keys)
+                    val count = jedis.scard(scratch)
+                    jedis.del(scratch)
+                    metrics.setUnique(window, channel, count)
+
+                    if (channel == CHANNEL_ALL && window == WINDOW_MONTH) mau = count
+                }
+
+                if (channel == CHANNEL_ALL) dau = daily
+
+                RETENTION_COHORTS.forEach { (cohort, daysAgo) ->
+                    val cohortKey = "$KEY_COHORT${dayOffset(-daysAgo)}$suffix"
+                    val cohortSize = jedis.scard(cohortKey)
+
+                    // A cohort with nobody in it has no retention rate.
+                    // Emitting 0 would draw a floor on the graph that reads as
+                    // "everyone churned" -- worst on a new deployment, where
+                    // every cohort is empty and every panel would open at 0%.
+                    if (cohortSize == 0L) return@forEach
+
+                    jedis.sinterstore(scratch, cohortKey, "$KEY_ACTIVE$today")
+                    val returned = jedis.scard(scratch)
+                    jedis.del(scratch)
+
+                    metrics.setRetention(cohort, channel, returned.toDouble() / cohortSize.toDouble())
+                }
             }
 
-            RETENTION_COHORTS.forEach { (cohort, daysAgo) ->
-                val cohortKey = "$KEY_COHORT${dayOffset(-daysAgo)}"
-                val cohortSize = jedis.scard(cohortKey)
-
-                // A cohort with nobody in it has no retention rate. Emitting 0
-                // would draw a floor on the graph that reads as "everyone
-                // churned" -- worst on a new deployment, where every cohort is
-                // empty and the dashboard would open at 0% across the board.
-                if (cohortSize == 0L) return@forEach
-
-                jedis.sinterstore(scratch, cohortKey, "$KEY_ACTIVE$today")
-                val returned = jedis.scard(scratch)
-                jedis.del(scratch)
-
-                metrics.setRetention(cohort, returned.toDouble() / cohortSize.toDouble())
-            }
+            // Guarded, not because a division by zero throws here -- it would
+            // produce NaN, which Prometheus stores and every subsequent
+            // aggregation then poisons.
+            if (mau > 0L) metrics.setStickiness(dau.toDouble() / mau.toDouble())
         }
     }
 
@@ -293,6 +390,21 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
         const val DAYS_IN_MONTH = 30
 
         val RETENTION_COHORTS = listOf("d1" to 1, "d7" to 7, "d30" to 30)
+
+        // The channel that ACQUIRED the player, written once and never again.
+        const val KEY_CHANNEL = "ob:analytics:channel:"
+
+        // Every player, regardless of channel -- the network-wide figure.
+        const val CHANNEL_ALL = "all"
+
+        // Seen before, but their channel record has aged out. Deliberately not
+        // folded into a real channel, which would inflate it.
+        const val CHANNEL_UNATTRIBUTED = "unattributed"
+
+        // Under a minute is not a short visit, it is a failed one: wrong client
+        // version, server full, or kicked. Counted apart from session length so
+        // a broken funnel does not read as an unengaged audience.
+        const val BOUNCE_THRESHOLD_SECONDS = 60.0
 
         const val KEY_FIRST_SEEN = "ob:analytics:first:"
         const val KEY_PLAYTIME = "ob:analytics:playtime:"

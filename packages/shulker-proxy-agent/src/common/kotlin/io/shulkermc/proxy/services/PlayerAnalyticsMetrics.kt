@@ -9,7 +9,6 @@ import dev.cubxity.plugins.metrics.api.metric.data.HistogramMetric
 import dev.cubxity.plugins.metrics.api.metric.data.Labels
 import dev.cubxity.plugins.metrics.api.metric.data.Metric
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.DoubleAdder
 
 /**
@@ -28,8 +27,15 @@ import java.util.concurrent.atomic.DoubleAdder
  *
  *   platform  java | bedrock                     -- 2 values
  *   hostname  an allow-list, everything else "other"
+ *   channel   the allow-list plus direct | other | unattributed | all
  *   window    day | week | month                 -- 3 values
  *   cohort    d1 | d7 | d30                      -- 3 values
+ *   kind      new | returning                    -- 2 values
+ *
+ * `hostname` is where a player connected THIS time; `channel` is who acquired
+ * them, fixed at their first ever login. They differ for every returning
+ * player, and conflating them is what makes advertising look worthless -- see
+ * setRetention.
  *
  * NOTHING IS EVER LABELLED BY PLAYER. Per-player facts live in Redis, where a
  * million keys is a normal Tuesday. The rule of thumb: if a label's value comes
@@ -46,21 +52,51 @@ class PlayerAnalyticsMetrics : CollectorCollection {
     private val playtimeSeconds = LabelledCounter()
     private val errors = LabelledCounter()
 
-    private val online = ConcurrentHashMap<String, AtomicLong>()
-    private val uniques = ConcurrentHashMap<String, AtomicLong>()
-    private val retention = ConcurrentHashMap<String, Double>()
+    // A join that ended almost immediately. Counted separately because it is
+    // acquisition LEAKAGE, not a short session: a player who lasts ten seconds
+    // usually could not get in -- wrong client version, server full, kicked by
+    // a plugin -- and every one of those is an advertising click that was paid
+    // for and bounced. A rising bounce rate on one channel is a broken funnel,
+    // not a bad audience.
+    private val bounces = LabelledCounter()
+
+    private val online = LabelledGauge()
+    private val uniques = LabelledGauge()
+    private val retention = LabelledGauge()
+    private val stickiness = LabelledGauge()
+    private val peakConcurrent = LabelledGauge()
 
     private val sessionSeconds = ConcurrentHashMap<String, SessionHistogram>()
 
     fun recordLogin(
         platform: String,
         hostname: String,
+        returning: Boolean,
     ) {
-        this.logins.inc(mapOf("platform" to platform, "hostname" to hostname))
+        this.logins.inc(
+            mapOf(
+                "platform" to platform,
+                "hostname" to hostname,
+                // New vs returning on the SAME counter rather than two, so a
+                // dashboard can show total logins and the split without adding
+                // series that have to be kept in step.
+                "kind" to if (returning) "returning" else "new",
+            ),
+        )
     }
 
-    fun recordNewPlayer(platform: String) {
-        this.newPlayers.inc(mapOf("platform" to platform))
+    fun recordNewPlayer(
+        platform: String,
+        channel: String,
+    ) {
+        this.newPlayers.inc(mapOf("platform" to platform, "channel" to channel))
+    }
+
+    fun recordBounce(
+        platform: String,
+        channel: String,
+    ) {
+        this.bounces.inc(mapOf("platform" to platform, "channel" to channel))
     }
 
     fun recordLogout(
@@ -81,21 +117,61 @@ class PlayerAnalyticsMetrics : CollectorCollection {
         platform: String,
         count: Long,
     ) {
-        this.online.computeIfAbsent(platform) { AtomicLong() }.set(count)
+        this.online.set(mapOf("platform" to platform), count.toDouble())
     }
 
     fun setUnique(
         window: String,
+        channel: String,
         count: Long,
     ) {
-        this.uniques.computeIfAbsent(window) { AtomicLong() }.set(count)
+        this.uniques.set(mapOf("window" to window, "channel" to channel), count.toDouble())
     }
 
+    /**
+     * Retention, sliced by the channel the player was ACQUIRED through.
+     *
+     * THIS IS THE METRIC THAT ANSWERS "WHICH ADVERTISING WORKS". A global
+     * retention rate cannot: it mixes everyone together, so a channel that
+     * delivers a thousand players who all leave in a minute and a channel that
+     * delivers fifty who stay for months are added up into one number that
+     * describes neither. Spend decisions need the ratio per channel.
+     *
+     * The channel is FIRST-TOUCH and immutable -- see PlayerAnalyticsService.
+     */
     fun setRetention(
         cohort: String,
+        channel: String,
         ratio: Double,
     ) {
-        this.retention[cohort] = ratio
+        this.retention.set(mapOf("cohort" to cohort, "channel" to channel), ratio)
+    }
+
+    /**
+     * DAU/MAU, the standard stickiness ratio.
+     *
+     * "How much of your monthly audience shows up on a given day". 1.0 would
+     * mean everyone plays daily; the number is a habit measure, and it moves
+     * for reasons that raw player counts hide -- a server can grow its monthly
+     * total while becoming less sticky, which is a churn problem wearing a
+     * growth costume.
+     */
+    fun setStickiness(ratio: Double) {
+        this.stickiness.set(emptyMap(), ratio)
+    }
+
+    /**
+     * The day's highest simultaneous player count on this proxy.
+     *
+     * Peak concurrent is the number a server is actually judged by -- it is
+     * what listing sites rank on and what capacity is planned against -- and an
+     * average hides it completely.
+     */
+    fun setPeakConcurrent(
+        platform: String,
+        count: Long,
+    ) {
+        this.peakConcurrent.set(mapOf("platform" to platform), count.toDouble())
     }
 
     override val collectors: List<Collector>
@@ -108,18 +184,16 @@ class PlayerAnalyticsMetrics : CollectorCollection {
             logins.emitInto(out, "overbound_player_logins_total")
             logouts.emitInto(out, "overbound_player_logouts_total")
             newPlayers.emitInto(out, "overbound_player_new_total")
+            bounces.emitInto(out, "overbound_player_bounces_total")
             playtimeSeconds.emitInto(out, "overbound_player_playtime_seconds_total")
             errors.emitInto(out, "overbound_player_analytics_errors_total")
 
-            online.forEach { (platform, value) ->
-                out += GaugeMetric("overbound_players_online", mapOf("platform" to platform), value.get())
-            }
-            uniques.forEach { (window, value) ->
-                out += GaugeMetric("overbound_players_unique", mapOf("window" to window), value.get())
-            }
-            retention.forEach { (cohort, ratio) ->
-                out += GaugeMetric("overbound_player_retention_ratio", mapOf("cohort" to cohort), ratio)
-            }
+            online.emitInto(out, "overbound_players_online")
+            uniques.emitInto(out, "overbound_players_unique")
+            retention.emitInto(out, "overbound_player_retention_ratio")
+            stickiness.emitInto(out, "overbound_player_stickiness_ratio")
+            peakConcurrent.emitInto(out, "overbound_players_peak_concurrent")
+
             sessionSeconds.forEach { (platform, histogram) ->
                 out += histogram.snapshot("overbound_player_session_seconds", mapOf("platform" to platform))
             }
@@ -153,6 +227,35 @@ class PlayerAnalyticsMetrics : CollectorCollection {
         ) {
             this.values.forEach { (labels, adder) ->
                 out += CounterMetric(name, labels, adder.sum())
+            }
+        }
+    }
+
+    /**
+     * A gauge keyed by its label set.
+     *
+     * Last-write-wins, unlike the counter next door: these are computed whole
+     * on every rollup rather than accumulated, so a plain volatile-backed map
+     * is the right shape. A label set that stops being written keeps its final
+     * value, which is what makes a channel that saw no players today still
+     * report its retention rather than vanishing from the graph.
+     */
+    private class LabelledGauge {
+        private val values = ConcurrentHashMap<Labels, Double>()
+
+        fun set(
+            labels: Labels,
+            value: Double,
+        ) {
+            this.values[labels] = value
+        }
+
+        fun emitInto(
+            out: MutableList<Metric>,
+            name: String,
+        ) {
+            this.values.forEach { (labels, value) ->
+                out += GaugeMetric(name, labels, value)
             }
         }
     }
