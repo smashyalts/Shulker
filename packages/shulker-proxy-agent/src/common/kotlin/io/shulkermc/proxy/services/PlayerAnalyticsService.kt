@@ -93,7 +93,24 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
         val startedAtMillis: Long,
         val platform: String,
         val channel: String,
-    )
+        val name: String,
+        // Milliseconds spent on each backend, accumulated as the player moves.
+        // A player who spends an evening bouncing between hub and village has
+        // one session and several entries here -- which is what makes
+        // "favourite server" answerable without a row per hop.
+        val serverMillis: MutableMap<String, Long> = ConcurrentHashMap(),
+        @Volatile var currentServer: String? = null,
+        @Volatile var currentServerSinceMillis: Long = 0L,
+    ) {
+        /** Bank the time spent on the server the player is leaving. */
+        fun closeCurrentServer(nowMillis: Long) {
+            val server = this.currentServer ?: return
+            val spent = nowMillis - this.currentServerSinceMillis
+            if (spent > 0) {
+                this.serverMillis.merge(server, spent, Long::plus)
+            }
+        }
+    }
 
     init {
         this.agent.proxyInterface.addPlayerLoginHook({ player ->
@@ -113,9 +130,24 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
                 returning = !attribution.isNew
             }
 
-            this.sessions[player.uniqueId] = Session(System.currentTimeMillis(), platform, channel)
+            this.sessions[player.uniqueId] =
+                Session(System.currentTimeMillis(), platform, channel, player.name)
             this.metrics?.recordLogin(platform, hostname, returning)
             this.refreshOnlineGauge()
+        }, HookPostOrder.MONITOR)
+
+        // Where the per-backend breakdown comes from. Fires after the player is
+        // actually connected, so the previous server's time is banked at the
+        // moment they land rather than when they asked to move -- a failed
+        // connect therefore does not silently credit the destination.
+        this.agent.proxyInterface.addServerPostConnectHook({ player, serverName ->
+            val session = this.sessions[player.uniqueId]
+            if (session != null) {
+                val now = System.currentTimeMillis()
+                session.closeCurrentServer(now)
+                session.currentServer = serverName
+                session.currentServerSinceMillis = now
+            }
         }, HookPostOrder.MONITOR)
 
         this.agent.proxyInterface.addPlayerDisconnectHook({ player ->
@@ -123,12 +155,17 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
             this.refreshOnlineGauge()
 
             if (session != null) {
-                val seconds = (System.currentTimeMillis() - session.startedAtMillis) / MILLIS_PER_SECOND
+                val endedAt = System.currentTimeMillis()
+                session.closeCurrentServer(endedAt)
+                val seconds = (endedAt - session.startedAtMillis) / MILLIS_PER_SECOND
                 this.metrics?.recordLogout(session.platform, seconds)
                 if (seconds < BOUNCE_THRESHOLD_SECONDS) {
                     this.metrics?.recordBounce(session.platform, session.channel)
                 }
                 this.safely("logout") { recordPlaytimeInRedis(player.uniqueId, seconds.toLong()) }
+                this.safely("session-record") {
+                    publishSession(player.uniqueId, session, endedAt, seconds.toLong())
+                }
             }
         }, HookPostOrder.MONITOR)
 
@@ -253,6 +290,67 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
         metrics.setPeakConcurrent(PLATFORM_JAVA, this.peakJava)
         metrics.setPeakConcurrent(PLATFORM_BEDROCK, this.peakBedrock)
     }
+
+    /**
+     * Hand a finished session to whoever is durably storing them.
+     *
+     * A REDIS STREAM, NOT A DATABASE WRITE FROM HERE. The durable home for
+     * session history is MongoDB, and this deliberately does not talk to it:
+     *
+     *   - it keeps a Mongo driver out of a jar that runs inside every proxy,
+     *     where a dependency is a class-loader risk and 2MB on every Pod start;
+     *   - XADD is fire-and-forget against a connection this agent already
+     *     holds, so a disconnect never waits on a second database;
+     *   - if the consumer is down, entries queue instead of being lost. A
+     *     direct write would drop the session with the panel.
+     *
+     * MAXLEN is approximate (~) on purpose: exact trimming makes XADD O(n) and
+     * the bound only needs to be a bound. At a few thousand sessions a day the
+     * cap is days of headroom for a consumer that is only ever briefly absent.
+     *
+     * The consumer is the admin panel, which owns the Mongo credentials and is
+     * the thing that reads this data back out anyway.
+     */
+    private fun publishSession(
+        playerId: UUID,
+        session: Session,
+        endedAtMillis: Long,
+        durationSeconds: Long,
+    ) {
+        // Serialised by hand rather than with a JSON library: the agent has no
+        // serialiser on its classpath, the shape is fixed, and the only field
+        // that can contain anything surprising is the player name -- which
+        // Mojang restricts to [A-Za-z0-9_], and Floodgate prefixes with a
+        // configured character. Escaped anyway; a Bedrock prefix is
+        // configurable and this should not depend on what it is set to.
+        val servers =
+            session.serverMillis.entries.joinToString(",") { (name, millis) ->
+                "\"${escapeJson(name)}\":${millis / 1000}"
+            }
+
+        this.agent.cluster.jedisPool.resource.use { jedis ->
+            jedis.xadd(
+                KEY_SESSION_STREAM,
+                redis.clients.jedis.params.XAddParams.xAddParams()
+                    .maxLen(SESSION_STREAM_MAXLEN)
+                    .approximateTrimming(),
+                mapOf(
+                    "player" to playerId.toString(),
+                    "name" to session.name,
+                    "platform" to session.platform,
+                    "channel" to session.channel,
+                    "proxy" to this.agent.cluster.selfReference.name,
+                    "startedAt" to session.startedAtMillis.toString(),
+                    "endedAt" to endedAtMillis.toString(),
+                    "seconds" to durationSeconds.toString(),
+                    "servers" to "{$servers}",
+                ),
+            )
+        }
+    }
+
+    private fun escapeJson(value: String): String =
+        value.replace("\\", "\\\\").replace("\"", "\\\"")
 
     private data class Attribution(val channel: String, val isNew: Boolean)
 
@@ -511,6 +609,16 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
         const val KEY_CHANNEL = "ob:analytics:channel:"
 
         const val MODE_OPEN = "open"
+
+        // Finished sessions, drained into MongoDB by the admin panel. A stream
+        // rather than a list so the consumer can track its own position and
+        // resume after a restart without re-reading everything.
+        const val KEY_SESSION_STREAM = "ob:analytics:sessions"
+
+        // Roughly a week of headroom at a few thousand sessions a day. The
+        // consumer is expected to be seconds behind; this is the bound for when
+        // it is not.
+        const val SESSION_STREAM_MAXLEN = 100_000L
 
         // Referral codes somebody has registered. A hostname absent from this
         // set (and from the static allow-list) is reported as "other", which is
