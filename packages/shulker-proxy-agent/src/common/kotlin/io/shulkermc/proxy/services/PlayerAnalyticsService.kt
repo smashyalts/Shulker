@@ -76,6 +76,19 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
      */
     @Volatile private var registeredChannels: Set<String> = emptySet()
 
+    private val blockedHostnames: Set<String> = Configuration.ANALYTICS_BLOCKED_HOSTNAMES.toSet()
+    private val domainSuffixes: List<String> = Configuration.ANALYTICS_DOMAIN_SUFFIXES
+
+    // Open mode needs a suffix to bound it. Without one it would accept any
+    // string a client sends, so it degrades to allowlist behaviour instead --
+    // a misconfiguration should narrow what is recorded, never widen it.
+    private val openMode: Boolean =
+        Configuration.ANALYTICS_MODE == MODE_OPEN && this.domainSuffixes.isNotEmpty()
+
+    @Volatile private var channelDay = ""
+
+    private val seenChannels: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     private data class Session(
         val startedAtMillis: Long,
         val platform: String,
@@ -126,13 +139,16 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
                 TimeUnit.SECONDS,
             ) { this.safely("rollup") { computeRollups() } }
 
-        val configuredHostnames =
-            if (this.hostnameAllowList.isEmpty()) {
-                "none configured, every connection reported as '$HOSTNAME_OTHER'"
+        val mode =
+            if (this.openMode) {
+                "open under ${this.domainSuffixes.joinToString(",")}, " +
+                    "max ${Configuration.ANALYTICS_NEW_CHANNELS_PER_DAY} new channels/day"
+            } else if (this.hostnameAllowList.isEmpty()) {
+                "allowlist, none configured -- every connection reported as '$HOSTNAME_OTHER'"
             } else {
-                this.hostnameAllowList.joinToString(",")
+                "allowlist: ${this.hostnameAllowList.joinToString(",")}"
             }
-        this.agent.logger.info("Player analytics started (hostnames: $configuredHostnames)")
+        this.agent.logger.info("Player analytics started ($mode)")
     }
 
     fun destroy() {
@@ -166,14 +182,55 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
      */
     private fun normaliseHostname(virtualHost: String?): String {
         if (virtualHost == null) return HOSTNAME_DIRECT
+
+        // The deny list wins over everything, including an explicit allow-list
+        // entry -- so retiring a name is one edit rather than a hunt for
+        // wherever it was permitted.
+        if (this.blockedHostnames.contains(virtualHost)) return HOSTNAME_OTHER
+
         if (this.hostnameAllowList.contains(virtualHost)) return virtualHost
-        // A referral subdomain counts only once someone has REGISTERED it.
+
+        // A referral subdomain counts once someone has REGISTERED it.
         // Registration is a deliberate act that writes a Redis key, so the set
         // of acceptable channels grows by decision rather than by whatever a
-        // stranger puts in a handshake -- which is the property that makes
-        // opening this up safe at all.
+        // stranger puts in a handshake.
         if (this.registeredChannels.contains(virtualHost)) return virtualHost
+
+        if (this.openMode && this.hasKnownSuffix(virtualHost)) {
+            return this.admitOpenChannel(virtualHost)
+        }
+
         return HOSTNAME_OTHER
+    }
+
+    private fun hasKnownSuffix(host: String): Boolean = this.domainSuffixes.any { host.endsWith(it) }
+
+    /**
+     * Accept a hostname as a channel in open mode, up to the daily cap.
+     *
+     * THE CAP IS THE BACKSTOP, and it is deliberately in memory rather than in
+     * Redis. This runs on the login path, where a round trip to answer "have I
+     * seen this name today" would be paid by every joining player; the cost of
+     * keeping it local is that the limit is per-proxy and therefore up to three
+     * times the configured number across the fleet. That is a bound, which is
+     * the property that matters -- the exact ceiling is not.
+     *
+     * Once the cap is reached the hostname reports as "other" rather than being
+     * rejected: a player still joins and is still counted, only their channel
+     * is coarser. Degrading the data beats degrading the service.
+     */
+    private fun admitOpenChannel(host: String): String {
+        val today = today()
+        if (this.channelDay != today) {
+            this.channelDay = today
+            this.seenChannels.clear()
+        }
+
+        if (this.seenChannels.contains(host)) return host
+        if (this.seenChannels.size >= Configuration.ANALYTICS_NEW_CHANNELS_PER_DAY) return HOSTNAME_OTHER
+
+        this.seenChannels.add(host)
+        return host
     }
 
     private fun refreshOnlineGauge() {
@@ -331,7 +388,7 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
             // which is where the payout report reads it from. Prometheus is for
             // the shape of the business, not the ledger.
             val ranked =
-                (this.hostnameAllowList + this.registeredChannels)
+                (this.hostnameAllowList + this.registeredChannels + this.seenChannels)
                     .distinct()
                     .map { it to jedis.scard("$KEY_ACTIVE$today:$it") }
                     .sortedByDescending { it.second }
@@ -452,6 +509,8 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
 
         // The channel that ACQUIRED the player, written once and never again.
         const val KEY_CHANNEL = "ob:analytics:channel:"
+
+        const val MODE_OPEN = "open"
 
         // Referral codes somebody has registered. A hostname absent from this
         // set (and from the static allow-list) is reported as "other", which is

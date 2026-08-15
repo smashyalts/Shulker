@@ -54,6 +54,73 @@ object Configuration {
             }
             .orElse(emptyList())
 
+    /**
+     * "allowlist" (default) or "open".
+     *
+     * allowlist: only ANALYTICS_HOSTNAMES and registered referral codes become
+     * channels. Everything else is "other". Nothing a client sends can create
+     * a channel.
+     *
+     * open: any hostname under ANALYTICS_DOMAIN_SUFFIXES becomes a channel on
+     * sight, so a campaign subdomain starts attributing the moment DNS exists
+     * and nobody has to remember to register it. Bounded by the suffix check,
+     * a per-day cap on NEW channels, and the top-N export -- see
+     * PlayerAnalyticsService. Without those three, "open" would be a hostname
+     * label a stranger controls, which is an unbounded series count and a
+     * monitoring outage waiting to be triggered.
+     */
+    val ANALYTICS_MODE: String =
+        getOptionalStringEnv("SHULKER_ANALYTICS_MODE")
+            .map(String::lowercase)
+            .orElse("allowlist")
+
+    /**
+     * Suffixes a hostname must end with to become a channel in `open` mode.
+     *
+     * THIS IS THE BOUND THAT REPLACES THE ALLOW-LIST. Only we can create names
+     * under our own domain, so restricting to it means a channel is something
+     * we published rather than something a client invented. Empty means no
+     * hostname qualifies, which is why `open` without it behaves exactly like
+     * `allowlist` rather than like a wildcard.
+     */
+    val ANALYTICS_DOMAIN_SUFFIXES: List<String> =
+        getOptionalStringEnv("SHULKER_ANALYTICS_DOMAIN_SUFFIXES")
+            .map { splitList(it) }
+            .orElse(emptyList())
+
+    /**
+     * Hostnames that must never become a channel, whatever the mode.
+     *
+     * A deny list on top of the bounds above, not instead of them -- for
+     * retiring a campaign name, or for a subdomain that turns out to be
+     * getting scanner traffic rather than players.
+     */
+    val ANALYTICS_BLOCKED_HOSTNAMES: List<String> =
+        getOptionalStringEnv("SHULKER_ANALYTICS_BLOCKED_HOSTNAMES")
+            .map { splitList(it) }
+            .orElse(emptyList())
+
+    /**
+     * How many NEW channels may be created in a single UTC day, per proxy.
+     *
+     * The backstop for `open` mode. A campaign launch creates a handful of
+     * names a week; anything creating hundreds in a day is a bot varying the
+     * handshake, and this is what stops that becoming unbounded Redis keys.
+     * Once the cap is hit, further unseen hostnames report as "other" -- the
+     * data degrades rather than the monitoring falling over.
+     */
+    val ANALYTICS_NEW_CHANNELS_PER_DAY: Int =
+        getOptionalIntEnv("SHULKER_ANALYTICS_NEW_CHANNELS_PER_DAY")
+            .getOrDefault(DEFAULT_NEW_CHANNELS_PER_DAY)
+
+    private const val DEFAULT_NEW_CHANNELS_PER_DAY = 200
+
+    private fun splitList(raw: String): List<String> =
+        raw.split(",")
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .map(String::lowercase)
+
     private fun getStringEnv(name: String): String = requireNotNull(System.getenv(name)) { "Missing $name" }
 
     private fun getOptionalStringEnv(name: String): Optional<String> = Optional.ofNullable(System.getenv(name))
