@@ -64,6 +64,18 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
     // carrying yesterday's high water mark forever.
     @Volatile private var peakDay = ""
 
+    /**
+     * Referral codes somebody has registered, refreshed on every rollup.
+     *
+     * Cached rather than read per login: this is consulted on the login path,
+     * and a Redis round trip per join to answer a question whose answer changes
+     * a few times a week is the wrong trade. The cost is that a newly
+     * registered code takes up to one rollup interval to start attributing --
+     * documented rather than fixed, because the alternative is a hot read on
+     * the one path that must never be slow.
+     */
+    @Volatile private var registeredChannels: Set<String> = emptySet()
+
     private data class Session(
         val startedAtMillis: Long,
         val platform: String,
@@ -154,7 +166,14 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
      */
     private fun normaliseHostname(virtualHost: String?): String {
         if (virtualHost == null) return HOSTNAME_DIRECT
-        return if (this.hostnameAllowList.contains(virtualHost)) virtualHost else HOSTNAME_OTHER
+        if (this.hostnameAllowList.contains(virtualHost)) return virtualHost
+        // A referral subdomain counts only once someone has REGISTERED it.
+        // Registration is a deliberate act that writes a Redis key, so the set
+        // of acceptable channels grows by decision rather than by whatever a
+        // stranger puts in a handshake -- which is the property that makes
+        // opening this up safe at all.
+        if (this.registeredChannels.contains(virtualHost)) return virtualHost
+        return HOSTNAME_OTHER
     }
 
     private fun refreshOnlineGauge() {
@@ -244,8 +263,23 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
         if (seconds <= 0) return
         this.agent.cluster.jedisPool.resource.use { jedis ->
             val key = "$KEY_PLAYTIME$playerId"
-            jedis.incrBy(key, seconds)
+            val total = jedis.incrBy(key, seconds)
             jedis.expire(key, IDENTITY_TTL_SECONDS)
+
+            // THE QUALIFICATION GATE, and it exists because money is attached.
+            //
+            // A referral counts only once the referred player has actually
+            // played. Without a gate, a referrer with a handful of alt accounts
+            // can register a code, join once per alt and collect -- which is
+            // how these programmes get drained in their first week, every time.
+            //
+            // Crossing the threshold is detected on the increment that passes
+            // it (total >= gate > total - seconds), so the SADD happens exactly
+            // once per player rather than on every disconnect thereafter.
+            if (total >= QUALIFYING_PLAYTIME_SECONDS && total - seconds < QUALIFYING_PLAYTIME_SECONDS) {
+                val channel = jedis.get("$KEY_CHANNEL$playerId") ?: return@use
+                jedis.sadd("$KEY_QUALIFIED$channel", playerId.toString())
+            }
         }
     }
 
@@ -277,9 +311,34 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
         // falls into, plus CHANNEL_ALL for the network-wide figure. Bounded by
         // configuration, which is what keeps the series count bounded too.
         val synthetic = listOf(CHANNEL_ALL, HOSTNAME_DIRECT, HOSTNAME_OTHER, CHANNEL_UNATTRIBUTED)
-        val channels = synthetic + this.hostnameAllowList
 
         this.agent.cluster.jedisPool.resource.use { jedis ->
+            // Refresh the registry first, so a code registered since the last
+            // rollup starts attributing on the next login rather than the one
+            // after that.
+            this.registeredChannels = jedis.smembers(KEY_REGISTERED_CODES) ?: emptySet()
+
+            // THE CARDINALITY BOUND, now that channels are user-created.
+            //
+            // The registry is deliberately unbounded -- referrers can be added
+            // forever, and Redis does not care. Prometheus does: one series per
+            // channel per window per cohort, kept for as long as the data is
+            // retained. So only the busiest TOP_CHANNELS are exported by name
+            // and the rest are left to the `other` bucket they already fall
+            // into for reporting purposes.
+            //
+            // The full per-referrer breakdown is not lost -- it stays in Redis,
+            // which is where the payout report reads it from. Prometheus is for
+            // the shape of the business, not the ledger.
+            val ranked =
+                (this.hostnameAllowList + this.registeredChannels)
+                    .distinct()
+                    .map { it to jedis.scard("$KEY_ACTIVE$today:$it") }
+                    .sortedByDescending { it.second }
+                    .take(TOP_CHANNELS)
+                    .map { it.first }
+
+            val channels = synthetic + ranked
             var dau = 0L
             var mau = 0L
 
@@ -393,6 +452,25 @@ class PlayerAnalyticsService(private val agent: ShulkerProxyAgentCommon) {
 
         // The channel that ACQUIRED the player, written once and never again.
         const val KEY_CHANNEL = "ob:analytics:channel:"
+
+        // Referral codes somebody has registered. A hostname absent from this
+        // set (and from the static allow-list) is reported as "other", which is
+        // what stops a stranger's handshake creating a channel.
+        const val KEY_REGISTERED_CODES = "ob:analytics:refcodes"
+
+        // Referred players who have played long enough to count. This is the
+        // set a payout is computed from -- never the raw join count.
+        const val KEY_QUALIFIED = "ob:analytics:qualified:"
+
+        // An hour of actual play. Long enough that farming it with alts costs
+        // more than the commission is worth, short enough that a genuine player
+        // clears it on their first evening.
+        const val QUALIFYING_PLAYTIME_SECONDS = 3600L
+
+        // How many named channels reach Prometheus. The registry itself is
+        // unbounded; this is the bound on the metric labels. The full
+        // per-referrer breakdown lives in Redis for the payout report.
+        const val TOP_CHANNELS = 20
 
         // Every player, regardless of channel -- the network-wide figure.
         const val CHANNEL_ALL = "all"
