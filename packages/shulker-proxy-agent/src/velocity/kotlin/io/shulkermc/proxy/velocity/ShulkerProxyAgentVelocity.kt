@@ -50,8 +50,18 @@ class ShulkerProxyAgentVelocity
         // ordinary class with a public constructor whose lifecycle methods are
         // public, so it can simply be built here and handed the events this class
         // already receives. That is why Velocity needs no fork and Bukkit did.
+        //
+        // eventOwner is this class, and it is load-bearing. UnifiedMetrics'
+        // EventsCollection registers a Velocity listener, and Velocity resolves
+        // a listener's owner by instance -- the bootstrap above was built with
+        // `new` here, so Velocity has no container for it and registration
+        // threw "UnifiedMetricsVelocityBootstrap does not have a container".
+        // The failure was swallowed into one WARN and the minecraft_events_*
+        // counters simply never existed. This class IS the @Plugin, so it is
+        // the owner those listeners belong to.
         private val metrics =
             UnifiedMetricsVelocityBootstrap(dataDirectory, proxy, slf4jLogger, pluginDescription)
+                .also { it.eventOwner = this }
 
         @Subscribe
         fun onProxyInitialization(
